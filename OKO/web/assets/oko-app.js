@@ -175,7 +175,7 @@
     mode: 'registry', minTier: 4, types: new Set(), providers: new Set(), preset: '7d', range: null,
     expansion: null, expKey: '', items: new Map(), meta: new Map(), jobId: null, running: false, abort: null,
     tasks: new Map(), stats: {}, notes: [], planInfo: [], started: 0, done: null,
-    filters: { tier: new Set(), origin: new Set(), type: new Set(), country: new Set(), lang: new Set(), src: new Set(), access: new Set(), hit: new Set(), flag: new Set() },
+    filters: { tier: new Set(), origin: new Set(), kw: new Set(), type: new Set(), country: new Set(), lang: new Set(), src: new Set(), access: new Set(), hit: new Set(), flag: new Set() },
     text: '', sort: 'authority', view: 'list', selected: null, shown: 150, openStories: new Set(),
     dossier: new Map(), history: [], settings: {}, snapshot: null, stopTerms: [],
     deep: { queue: [], active: 0, total: 0, done: 0 }, density: 'full', facetMore: new Set()
@@ -323,10 +323,14 @@
       const out = { topic: t, entity: e ? { id: e.id, label: e.label, source: 'словарь ОКО' } : null, langs: {} };
       for (const code of langs.concat(langs.includes('zh') ? ['zh-Hant'] : [])) {
         if (e && e.terms[code]) {
-          let qq = e.terms[code].slice(), mm = (e.match && e.match[code]) || [];
-          if (rel) for (const rid of e.related || []) { const r = byId.get(rid); if (r && r.terms[code]) qq.push(r.terms[code][0]); }
-          if (rel) mm = mm.concat((e.extra_match && e.extra_match[code]) || []);
-          out.langs[code] = { q: qq, m: mm, src: 'lexicon', note: 'словарь ОКО' };
+          let qq = e.terms[code].slice(), mm = ((e.match && e.match[code]) || []).slice();
+          const relMap = {};
+          if (rel) for (const rid of e.related || []) {
+            const r = byId.get(rid);
+            if (r && r.terms[code]) { qq.push(r.terms[code][0]); relMap[r.terms[code][0]] = r.label; for (const x of (r.match && r.match[code]) || []) { mm.push(x); relMap[x] = r.label; } }
+          }
+          if (rel) for (const x of (e.extra_match && e.extra_match[code]) || []) { mm.push(x); if (!(x in relMap)) relMap[x] = ''; }
+          out.langs[code] = { q: qq, m: mm, src: 'lexicon', note: 'словарь ОКО', rel: relMap };
         } else out.langs[code] = { q: [t], m: [], src: 'original', note: 'нет перевода (автономный режим)' };
       }
       return out;
@@ -339,7 +343,24 @@
       const col = (arr, k) => arr.flatMap((x) => ((x.langs[code] || x.langs.zh || {})[k] || []));
       plan[code] = { q: [...new Set(col(topics, 'q'))], m: [...new Set(col(topics, 'm'))], ctx: [...new Set(col(context, 'q'))], ctx_m: [], not: [...new Set(col(exclude, 'q'))] };
     }
-    return { topics, context, exclude, plan };
+    return { topics, context, exclude, plan, origins: termOrigins(topics, context) };
+  }
+  // происхождение терминов: ключевое слово → перевод / словоформа / связанный термин / контекст (как plan_origins на сервере)
+  function termOrigins(topics, context) {
+    const out = {};
+    const put = (term, kw, role, code, src, of) => {
+      const k = C.normText(term);
+      if (!k) return;
+      const cur = out[k];
+      if (!cur) out[k] = { t: term, kw, role, of: of || '', langs: [code], src: src || '' };
+      else if (cur.kw === kw && cur.role === role && !cur.langs.includes(code)) cur.langs.push(code);
+    };
+    const each = (list, fn) => { for (const e of list || []) for (const [code, t] of Object.entries(e.langs || {})) fn(e, code, t, t.rel || {}); };
+    each(topics, (e, code, t, rel) => (t.q || []).forEach((x) => { if (!(x in rel)) put(x, e.topic, 'main', code, t.src); }));
+    each(topics, (e, code, t, rel) => (t.q || []).concat(t.m || []).forEach((x) => { if (x in rel) put(x, e.topic, 'related', code, t.src, rel[x]); }));
+    each(topics, (e, code, t, rel) => (t.m || []).forEach((x) => { if (!(x in rel)) put(x, e.topic, 'form', code, t.src); }));
+    each(context, (e, code, t) => (t.q || []).concat(t.m || []).forEach((x) => put(x, e.topic, 'ctx', code, t.src)));
+    return out;
   }
 
   function renderTerms() {
@@ -366,10 +387,14 @@
   function termEditor(p, key, code, rtl, single) {
     const box = el('div', { class: 'tchips' });
     const list = p[key] || (p[key] = []);
+    const orig = (S.expansion && S.expansion.origins) || {};
     list.forEach((t, i) => {
       const rm = el('button', { title: 'Удалить' }, '×');
       rm.addEventListener('click', () => { list.splice(i, 1); saveGlossary(single, code, key, list); renderTerms(); });
-      box.appendChild(el('span', { class: 'tchip', lang: code === 'zh-Hant' ? 'zh-Hant' : code, dir: rtl ? 'rtl' : 'auto' }, t, rm));
+      const o = orig[C.normText(t)];
+      const rel = o && o.role === 'related';
+      box.appendChild(el('span', { class: 'tchip' + (rel ? ' rel' : ''), lang: code === 'zh-Hant' ? 'zh-Hant' : code, dir: rtl ? 'rtl' : 'auto',
+        title: o ? (rel ? 'Связанный термин' + (o.of ? ' (' + o.of + ')' : '') + ' для «' + o.kw + '»' : 'Ключевое слово «' + o.kw + '»') : 'Добавлен вручную' }, t, rm));
     });
     const inp = el('input', { class: 'tadd', placeholder: '+ термин', lang: code, dir: 'auto' });
     inp.addEventListener('keydown', (e) => {
@@ -419,6 +444,7 @@
       }
       const params = {
         topics: q.topics, context: q.context, exclude: q.exclude, langs: [...S.langOn], plan: exp.plan,
+        origins: exp.origins || termOrigins(exp.topics, exp.context),
         t_from: Math.floor(a.getTime() / 1000), t_to: Math.floor(b.getTime() / 1000), tz_offset: -new Date().getTimezoneOffset(),
         providers: [...S.providers], types: [...S.types]
       };
@@ -546,11 +572,15 @@
     tasks.forEach((t) => S.tasks.set(t.key, t));
     renderProgress();
     const matcher = new C.TermMatcher(Object.values(params.plan).flatMap((p) => p.q.concat(p.m || [])));
-    const add = (it) => {
+    const add = (it, t) => {
       if (!it.ts || it.ts < params.t_from || it.ts > params.t_to) return;
       const hit = matcher.find(it.title);
       it.hit = hit ? 'title' : 'engine';
       it.term = hit || '';
+      const o = hit ? (params.origins || {})[hit] : null;
+      if (o) Object.assign(it, { kw: o.kw, role: o.role, of: o.of || '', tl: o.langs || [] });
+      else if (params.topics.length === 1) Object.assign(it, { kw: params.topics[0], role: 'engine' });
+      if (t) it.q = [{ t: t.label, q: t.query || '' }];
       mergeItem(it);
     };
     for (const t of tasks) {
@@ -562,6 +592,7 @@
           const terms = en.q.slice(0, 4).map((x) => (/\s/.test(x) ? '"' + x + '"' : x));
           let q = terms.length > 1 ? '(' + terms.join(' OR ') + ')' : terms[0];
           if (t.gdelt) q += ' sourcelang:' + t.gdelt;
+          t.query = q;
           const url = 'https://api.gdeltproject.org/api/v2/doc/doc?' + new URLSearchParams({ query: q, mode: 'artlist', format: 'json', maxrecords: '250', sort: 'datedesc', startdatetime: gd(Math.max(params.t_from, Date.now() / 1000 - 89 * 86400)), enddatetime: gd(params.t_to) });
           const r = await fetch(url, { signal: ctrl.signal });
           const txt = await r.text();
@@ -569,19 +600,20 @@
           for (const a of arts) {
             const m = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/.exec(a.seendate || '');
             const ts = m ? Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]) / 1000 : null;
-            add({ id: 'u' + hash(a.url), url: a.url, title: a.title || '', snippet: '', ts, lang: GDELT_LANG[(a.language || '').toLowerCase()] || t.code, src_name: a.domain, src_url: '', domain: (a.domain || '').replace(/^www\./, ''), prov: ['gdelt'], via: ['GDELT'], authors: [], related: [], extra: {}, kind: 'news' });
+            add({ id: 'u' + hash(a.url), url: a.url, title: a.title || '', snippet: '', ts, lang: GDELT_LANG[(a.language || '').toLowerCase()] || t.code, src_name: a.domain, src_url: '', domain: (a.domain || '').replace(/^www\./, ''), prov: ['gdelt'], via: ['GDELT'], authors: [], related: [], extra: {}, kind: 'news' }, t);
           }
           t.n = arts.length;
           await new Promise((res) => setTimeout(res, 5300));
         } else {
           const f = new Date(params.t_from * 1000).toISOString().slice(0, 10), to = new Date(params.t_to * 1000).toISOString().slice(0, 10);
-          const url = 'https://api.openalex.org/works?' + new URLSearchParams({ search: '(' + en.q.slice(0, 3).join(' OR ') + ')', 'per-page': '50', sort: 'publication_date:desc', filter: 'from_publication_date:' + f + ',to_publication_date:' + to });
+          t.query = '(' + en.q.slice(0, 3).join(' OR ') + ')';
+          const url = 'https://api.openalex.org/works?' + new URLSearchParams({ search: t.query, 'per-page': '50', sort: 'publication_date:desc', filter: 'from_publication_date:' + f + ',to_publication_date:' + to });
           const data = await (await fetch(url, { signal: ctrl.signal })).json();
           for (const w of data.results || []) {
             const loc = w.primary_location || {};
             const src = loc.source || {};
             const u = loc.landing_page_url || w.doi || w.id;
-            add({ id: 'u' + hash(u), url: u, title: w.display_name || '', snippet: w.type || '', ts: w.publication_date ? Date.parse(w.publication_date + 'T12:00:00Z') / 1000 : null, lang: w.language || 'en', src_name: src.display_name || '', domain: C.hostOf(u), prov: ['openalex'], via: ['OpenAlex'], authors: (w.authorships || []).map((x) => (x.author || {}).display_name).filter(Boolean), related: [], extra: { publisher: src.host_organization_name || '' }, kind: 'paper', pdf: (w.open_access || {}).oa_url || '' });
+            add({ id: 'u' + hash(u), url: u, title: w.display_name || '', snippet: w.type || '', ts: w.publication_date ? Date.parse(w.publication_date + 'T12:00:00Z') / 1000 : null, lang: w.language || 'en', src_name: src.display_name || '', domain: C.hostOf(u), prov: ['openalex'], via: ['OpenAlex'], authors: (w.authorships || []).map((x) => (x.author || {}).display_name).filter(Boolean), related: [], extra: { publisher: src.host_organization_name || '' }, kind: 'paper', pdf: (w.open_access || {}).oa_url || '' }, t);
           }
           t.n = (data.results || []).length;
         }
@@ -629,7 +661,8 @@
     lang: (it) => (it.lang || '—').slice(0, 2),
     src: (it) => it.srcName || it.domain || '—',
     access: (it) => (it.paywall ? 'paid' : 'free'),
-    hit: (it) => it.hit || 'engine'
+    hit: (it) => it.hit || 'engine',
+    kw: kwKey
   };
   function flagsOf(it) {
     const f = [];
@@ -734,6 +767,7 @@
       return el('span', null, el('span', { class: 'tier t' + k, style: 'width:18px;height:16px;font-size:10px;margin-right:6px' }, t.code), t.label.split('—')[1].trim());
     }));
     box.appendChild(facetSection('Статус информации', 'origin', sortedEntries(facetCounts.origin, ['primary', 'reprint', 'unknown']), (k) => ({ primary: '✔ Первоисточник', reprint: '⟳ Перепубликация', unknown: '? Не определено' }[k])));
+    if (facetCounts.kw.size > 1 || S.filters.kw.size) box.appendChild(facetSection('Найдено по ключевому слову', 'kw', sortedEntries(facetCounts.kw), kwLabel, 10));
     box.appendChild(facetSection('Тип источника', 'type', sortedEntries(facetCounts.type), (k) => C.TYPE_LABELS[k] || k));
     box.appendChild(facetSection('Страна издания', 'country', sortedEntries(facetCounts.country), (k) => (k === '—' ? 'не определена' : countryName(k) + ' (' + k + ')'), 12));
     box.appendChild(facetSection('Язык', 'lang', sortedEntries(facetCounts.lang), (k) => (k === '—' ? 'не определён' : langName(k)), 10));
@@ -761,6 +795,114 @@
     return el('span', { class: 'tier t' + (t || 4), title: 'Уровень авторитетности: ' + T.label + '. ' + T.desc }, T.code);
   }
 
+  // ================================================================ «найдено по»: ключевое слово, термин, запрос
+  const ROLE_RU = { main: 'ключевое слово', form: 'словоформа ключевого слова', related: 'связанный термин', ctx: 'контекст', manual: 'термин, добавленный вручную', engine: 'запрос к поисковой системе' };
+  const TSRC_RU = { lexicon: 'словарь ОКО', wikidata: 'Wikidata', mt: 'машинный перевод', user: 'ваш глоссарий', original: 'исходное написание' };
+  const HIT_RU = { title: 'в заголовке', text: 'в аннотации', engine: 'в тексте статьи (по данным поисковой системы)' };
+  function explain(it) {
+    const o = it.term ? (((S.params && S.params.origins) || {})[it.term] || null) : null;
+    const tp = (S.params && S.params.topics) || [];
+    return {
+      kw: it.kw || (o && o.kw) || (tp.length === 1 ? tp[0] : ''),
+      role: it.role || (o && o.role) || (it.hit === 'engine' ? 'engine' : (it.term ? 'main' : '')),
+      of: it.of || (o && o.of) || '',
+      langs: (it.tl && it.tl.length ? it.tl : (o && o.langs)) || [],
+      src: (o && o.src) || '',
+      base: (o && o.t) || ''
+    };
+  }
+  // найти сработавший термин в исходном тексте (с учётом регистра, диакритики, «ё»/«й») → [начало, конец слова]
+  function locate(text, term) {
+    if (!text || !term) return null;
+    const chars = Array.from(text);
+    const fold = chars.map((c) => { const n = C.normText(c); return n.length === c.length ? n : c; });
+    const hay = fold.join('');
+    if (hay.length !== text.length) return null;
+    const cjk = /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/.test(term[0]);
+    let i = -1, from = 0;
+    for (;;) {
+      i = hay.indexOf(term, from);
+      if (i < 0) return null;
+      if (cjk || i === 0 || !/[\p{L}\p{M}\p{N}']/u.test(hay[i - 1]) || /^[\u0600-\u06ff\u0590-\u05ff]/.test(term)) break;
+      from = i + 1;
+    }
+    let j = i + term.length;
+    if (!cjk) while (j < text.length && /[\p{L}\p{M}\p{N}'’]/u.test(text[j])) j++;
+    const poss = /['’]s?$/i.exec(text.slice(i, j));
+    if (poss && j - poss[0].length > i + term.length - 1) j -= poss[0].length;
+    return [i, j];
+  }
+  function marked(text, term, attrs, tag) {
+    const pos = locate(text, term);
+    const node = el(tag || 'span', attrs || null);
+    if (!pos) { node.textContent = text; return node; }
+    node.append(text.slice(0, pos[0]), el('mark', { class: 'hl' }, text.slice(pos[0], pos[1])), text.slice(pos[1]));
+    return node;
+  }
+  function termShown(it) {
+    for (const t of [it.title, it.snippet]) { const p = locate(t || '', it.term); if (p) return t.slice(p[0], p[1]); }
+    const e = explain(it);
+    return e.base || it.term || '';
+  }
+  function kwKey(it) {
+    const e = explain(it);
+    if (!e.kw && !it.term) return 'none';
+    if (e.role === 'related') return 'rel:' + (e.of || termShown(it));
+    if (e.role === 'manual') return 'man:' + termShown(it);
+    return 'kw:' + e.kw;
+  }
+  function kwLabel(k) {
+    if (k === 'none') return 'не определено';
+    const v = k.slice(k.indexOf(':') + 1);
+    if (k.startsWith('rel:')) return v ? v + ' — связанный термин' : 'связанные топонимы';
+    if (k.startsWith('man:')) return '«' + v + '» — добавлен вручную';
+    return v;
+  }
+  function roleText(it, e) {
+    const langs = e.langs.length ? e.langs.slice(0, 4).map(langName).join(', ').toLowerCase() + (e.langs.length > 4 ? '…' : '') : '';
+    const src = TSRC_RU[e.src] ? ' · ' + TSRC_RU[e.src] : '';
+    if (e.role === 'main') return (C.normText(e.base || it.term) === C.normText(e.kw) ? 'само ключевое слово' : 'перевод / вариант ключевого слова') + (langs ? ' · ' + langs : '') + src;
+    if (e.role === 'form') return 'словоформа ключевого слова (совпадение по основе «' + it.term + '…»)' + (langs ? ' · ' + langs : '');
+    if (e.role === 'related') return 'связанный термин' + (e.of ? ' — ' + e.of : ' (топоним / учреждение)') + ', добавлен к ключевому слову' + (langs ? ' · ' + langs : '');
+    if (e.role === 'manual') return 'термин, добавленный вручную в «Термины»' + (langs ? ' · ' + langs : '');
+    if (e.role === 'ctx') return 'термин контекста';
+    return ROLE_RU[e.role] || '';
+  }
+  function foundByText(it) {
+    const e = explain(it);
+    const parts = [];
+    if (e.kw) parts.push('ключевое слово «' + e.kw + '»');
+    if (it.term) parts.push('термин «' + termShown(it) + '» (' + (ROLE_RU[e.role] || '') + ', ' + (HIT_RU[it.hit] || '') + ')');
+    else if (it.hit === 'engine') parts.push('поисковая система, совпадение в тексте статьи');
+    if (it.ctx_term) parts.push('контекст «' + it.ctx_term + '»');
+    return parts.join('; ');
+  }
+  function foundBy(it) {
+    const e = explain(it);
+    const box = el('div', { class: 'foundby' });
+    box.appendChild(el('div', { class: 'fb-h' }, icon('search'), 'Найдено по'));
+    const row = (k, ...v) => box.appendChild(el('div', { class: 'fb-r' }, el('span', { class: 'fb-k' }, k), el('span', { class: 'fb-v' }, ...v)));
+    row('Ключевое слово', e.kw ? el('b', { class: 'fb-kw' }, '«' + e.kw + '»') : el('span', { class: 'muted' }, 'не определено'));
+    if (it.term) {
+      row(e.role === 'related' ? 'Связанный термин' : 'Сработал термин', el('b', { class: 'fb-term', lang: (e.langs[0] || it.lang || ''), dir: 'auto' }, termShown(it)),
+        el('span', { class: 'fb-where' }, ' — ' + (HIT_RU[it.hit] || '')), el('div', { class: 'fb-sub' }, roleText(it, e)));
+    } else if (it.hit === 'engine') {
+      row('Совпадение', el('span', null, 'термин не виден в заголовке и аннотации — поисковая система нашла его в тексте статьи'));
+    }
+    if (it.ctx_term) row('Контекст', el('b', null, it.ctx_term));
+    const qs = it.q || [];
+    qs.slice(0, 3).forEach((x, i) => row(i ? '' : (qs.length > 1 ? 'Запросы' : 'Запрос'), el('span', { class: 'fb-q' }, el('span', { class: 'muted' }, x.t + (x.q ? ': ' : ' — ')), x.q ? el('code', { dir: 'auto' }, x.q) : el('span', { class: 'muted' }, 'лента источника, отбор по терминам'))));
+    if (qs.length > 3) row('', el('span', { class: 'muted' }, 'и ещё ' + (qs.length - 3)));
+    return box;
+  }
+  function kwTag(it) {
+    const e = explain(it);
+    if (!it.term && !e.kw) return null;
+    const txt = it.term ? termShown(it) : e.kw;
+    const cls = 'tag kw' + (e.role === 'related' ? ' rel' : '') + (it.hit === 'engine' ? ' eng' : '');
+    return el('span', null, el('span', { class: cls, title: 'Найдено по: ' + foundByText(it), dir: 'auto' }, '⌕ ' + txt));
+  }
+
   function rowEl(it, opts) {
     opts = opts || {};
     const url = it.resolved || it.url;
@@ -772,7 +914,7 @@
       el('span', { class: 'src' }, it.srcName || it.domain || '—'),
       it.country ? el('span', { class: 'cc', title: countryName(it.country) }, it.country) : null,
       it.lang ? el('span', { class: 'lg', title: langName(it.lang) }, it.lang.toUpperCase()) : null,
-      el('time', { title: fmtDate(it.ts) + ' (' + tzLabel() + ') · ' + fmtUTC(it.ts) }, fmtShort(it.ts)));
+      el('time', { title: fmtDate(it.ts) + ' (' + tzLabel() + ') · ' + fmtUTC(it.ts) }, fmtShort(it.ts)), kwTag(it));
     if (it.new) meta.appendChild(el('span', null, el('span', { class: 'tag new', title: 'Не встречалось в прошлых поисках по этой теме' }, 'НОВОЕ')));
     if (it.paywall) meta.appendChild(el('span', null, el('span', { class: 'tag pw', title: C.PAYWALL_LABELS[it.paywall] || '' }, 'платный')));
     if (it.state) meta.appendChild(el('span', null, el('span', { class: 'tag st' + (it.state === 'public' ? ' public' : ''), title: it.state === 'control' ? 'Государственное СМИ (под контролем государства)' : 'Государственное финансирование, редакционная независимость' }, it.state === 'control' ? 'гос.' : 'гос. фин.')));
@@ -896,7 +1038,7 @@
     close.addEventListener('click', () => { S.selected = null; renderDetail(null); $$('#list .item.sel').forEach((r) => r.classList.remove('sel')); });
     const head = el('div', { class: 'dhead' },
       el('div', { class: 'dkicker' }, el('span', null, (C.TYPE_LABELS[it.type] || 'Материал') + (it.kind === 'paper' ? ' · научная публикация' : '')), close),
-      el('h2', { class: 'dtitle', lang: it.lang || '', dir: 'auto' }, it.title));
+      marked(it.title, it.hit === 'title' ? it.term : '', { class: 'dtitle', lang: it.lang || '', dir: 'auto' }, 'h2'));
     const acts = el('div', { class: 'dactions' });
     const openBtn = el('a', { class: 'btn small', href: url, target: '_blank', rel: 'noopener noreferrer', title: 'Открыть оригинал (O)' }, icon('ext'), 'Оригинал');
     acts.appendChild(openBtn);
@@ -906,6 +1048,7 @@
     acts.appendChild(st);
     head.appendChild(acts);
     box.appendChild(head);
+    box.appendChild(foundBy(it));
 
     // статус
     const o = it.origin || { status: 'unknown', reason: '', confidence: 'low' };
@@ -951,8 +1094,7 @@
       ['Опубликовано', el('span', null, fmtDate(it.ts) + ' (' + tzLabel() + ')', el('span', { class: 'sub' }, fmtUTC(it.ts) + (it.prec === 'day' ? ' · точность — день' : '') + (it.ts ? ' · ' + ago(it.ts) : '')))],
       ['Доступ', it.paywall ? el('span', { style: 'color:#f0c36a' }, C.PAYWALL_LABELS[it.paywall] + (m && m.paywall_evidence ? ' (' + m.paywall_evidence + ')' : '')) : 'свободный (по данным реестра)'],
       ['Гос. принадлежность', it.state === 'control' ? el('span', { style: 'color:#ff9c95' }, 'государственное СМИ (под контролем государства)') : it.state === 'public' ? 'государственное финансирование, редакционная независимость' : '—'],
-      ['Найдено через', (it.via || []).join('; ')],
-      ['Совпадение', ({ title: 'в заголовке', text: 'в тексте/аннотации', engine: 'по данным поисковой системы (в тексте статьи)' }[it.hit] || '—') + (it.term ? ': «' + it.term + '»' : '')]
+      ['Найдено через', (it.via || []).join('; ')]
     ];
     if (it.bm) rows.push(['Ваши закладки', it.bm + '. Аналитические центры, издания']);
     if (m && m.canonical) rows.push(['Каноническая ссылка', extLink(m.canonical, m.canonical)]);
@@ -965,7 +1107,7 @@
 
     // аннотация
     const snip = (m && (m.description || m.lead)) || it.snippet;
-    if (snip) box.appendChild(el('div', { class: 'dsec' }, el('h4', null, 'Аннотация'), el('div', { class: 'dsnip', lang: it.lang || '', dir: 'auto' }, snip)));
+    if (snip) box.appendChild(el('div', { class: 'dsec' }, el('h4', null, 'Аннотация'), marked(snip, it.term, { class: 'dsnip', lang: it.lang || '', dir: 'auto' }, 'div')));
 
     // сюжет
     if (it.storySize > 1) {
@@ -1123,7 +1265,7 @@
     if (S.dossier.has(it.id) && !force) S.dossier.delete(it.id);
     else if (!S.dossier.has(it.id)) {
       const snap = {};
-      for (const k of ['id', 'url', 'resolved', 'title', 'snippet', 'ts', 'lang', 'srcName', 'src_name', 'domain', 'country', 'tier', 'type', 'authors', 'paywall', 'state', 'origin', 'kind', 'pdf', 'via', 'gn']) snap[k] = it[k];
+      for (const k of ['id', 'url', 'resolved', 'title', 'snippet', 'ts', 'lang', 'srcName', 'src_name', 'domain', 'country', 'tier', 'type', 'authors', 'paywall', 'state', 'origin', 'kind', 'pdf', 'via', 'gn', 'hit', 'term', 'kw', 'role', 'of', 'tl', 'q', 'ctx_term']) snap[k] = it[k];
       S.dossier.set(it.id, { item: snap, note: '', added: Math.floor(Date.now() / 1000) });
     }
     it.starred = S.dossier.has(it.id);
@@ -1476,7 +1618,7 @@
       'Издание': it.srcName || '', 'Сайт': it.domain || '', 'Страна': it.country || '', 'Язык': it.lang || '',
       'Тип': C.TYPE_LABELS[it.type] || '', 'Доступ': it.paywall ? C.PAYWALL_LABELS[it.paywall] : 'свободный',
       'Гос.': it.state === 'control' ? 'гос. СМИ' : (it.state === 'public' ? 'гос. финанс.' : ''), 'Авторы': (it.authors || []).join(', '),
-      'Ссылка': it.resolved || it.url, 'Найдено через': (it.via || []).join('; '), 'Заметка': it.note || ''
+      'Ссылка': it.resolved || it.url, 'Найдено по': foundByText(it), 'Найдено через': (it.via || []).join('; '), 'Заметка': it.note || ''
     }));
   }
   function toCSV(items) {
@@ -1510,6 +1652,7 @@
           '<div class="m">' + h(x.srcName || x.domain) + ' · ' + h(countryName(x.country)) + ' · ' + h((x.lang || '').toUpperCase()) + ' · ' + h(fmtDate(x.ts)) +
           (x.paywall ? ' · платный' : '') + (x.state === 'control' ? ' · гос. СМИ' : '') + '</div>' +
           '<div class="s ' + st + '">' + mark + '</div>' + ((x.authors || []).length ? '<div class="m">Авторы: ' + h(x.authors.join(', ')) + '</div>' : '') +
+          (x.term || x.kw ? '<div class="m">Найдено по: ' + h(foundByText(x)) + '</div>' : '') +
           (x.note ? '<div class="note">Заметка: ' + h(x.note) + '</div>' : '') + '<div class="u">' +
           (/news\.google\.com\//.test(u) ? h(x.domain || '') + ' — ссылка через Google News' : h(u)) + '</div></div></div>';
       }

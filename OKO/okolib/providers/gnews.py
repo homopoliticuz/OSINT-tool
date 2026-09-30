@@ -17,7 +17,7 @@ from ..feedparse import google_related, parse_feed
 from ..net import FetchError
 from ..registry import ANALYTIC_TYPES
 from ..util import canonical_url, detect_lang, host_of, now_ts, ts_to_date
-from . import Task, make_item, or_group, quote_term
+from . import Task, make_item, or_group, query_meta, quote_term
 
 RSS = "https://news.google.com/rss/search?"
 SITE_GROUP = 11
@@ -56,10 +56,12 @@ def tasks(ctx) -> list:
             if not p or not p["q"]:
                 continue
             label = "Google News · %s (%s)" % (gl, hl)
+            meta = query_meta(p["q"][:4], p["ctx"][:3], p["not"][:4])
+            meta["exp"] = bool(lang.get("gnews_exp"))
             out.append(Task("gnews", "gn:%s:%s" % (gl, hl), label,
                             partial(_run, ed=ed, code=code, terms=p["q"][:4], ctx_terms=p["ctx"][:3],
                                     not_terms=p["not"][:4], sites=None),
-                            group=code, meta={"exp": bool(lang.get("gnews_exp"))}))
+                            group=code, meta=meta))
     # адресный поиск по аналитическим источникам реестра
     groups = {}
     for s in ctx.registry.sources:
@@ -82,11 +84,14 @@ def tasks(ctx) -> list:
             continue
         for i in range(0, len(domains), SITE_GROUP):
             chunk = domains[i:i + SITE_GROUP]
+            meta = query_meta(p["q"][:2], p["ctx"][:2], p["not"][:3],
+                              "site:(%s)" % ", ".join(chunk[:4]) + (" и ещё %d" % (len(chunk) - 4) if len(chunk) > 4 else ""))
+            meta["sites"] = len(chunk)
             out.append(Task("gnews", "gns:%s:%d" % (code, i // SITE_GROUP),
                             "Google News · аналитика %s #%d" % (code.upper(), i // SITE_GROUP + 1),
                             partial(_run, ed=ed, code=code, terms=p["q"][:2], ctx_terms=p["ctx"][:2],
                                     not_terms=p["not"][:3], sites=chunk),
-                            group=code, meta={"sites": len(chunk)}))
+                            group=code, meta=meta))
     return out
 
 

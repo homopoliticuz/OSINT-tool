@@ -61,15 +61,24 @@ def tasks(ctx) -> list:
     en = ctx.plan.get("en") or {}
     if not en.get("q"):
         return []
-    out = [Task("gdelt", "gdelt:all", "GDELT · все языки", partial(_run, code=None), group="all")]
+    out = [Task("gdelt", "gdelt:all", "GDELT · все языки", partial(_run, code=None), group="all",
+                meta=_meta(ctx, None))]
     for code in PRIORITY:
         if code not in ctx.lang_codes:
             continue
         lang = ctx.languages.by_code.get(code) or {}
         if lang.get("gdelt"):
             out.append(Task("gdelt", "gdelt:" + code, "GDELT · " + lang.get("name", code),
-                            partial(_run, code=code), group=code))
+                            partial(_run, code=code), group=code, meta=_meta(ctx, code)))
     return out
+
+
+def _meta(ctx, code) -> dict:
+    en = ctx.plan.get("en") or {}
+    terms = list(en.get("q", [])[:4])
+    if code and code != "en":
+        terms += [t for t in (ctx.plan.get(code) or {}).get("q", [])[:2] if len(t) >= 2]
+    return {"query": build_query(ctx, code), "terms": terms}
 
 
 def build_query(ctx, code) -> str:
@@ -108,6 +117,7 @@ def _run(ctx, task, code) -> int:
             q2 = or_group(en.get("q", [])[:4], "gdelt") + " sourcelang:" + ctx.languages.by_code[code]["gdelt"]
             arts = _fetch(ctx, q2, start, end)
             task.meta["note"] = "поиск по английским терминам (%s)" % e.short()
+            task.meta["query"] = q2
         else:
             raise
     added = 0

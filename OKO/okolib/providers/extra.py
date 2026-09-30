@@ -9,7 +9,7 @@ from urllib.parse import parse_qs, urlencode, urlsplit
 from ..feedparse import parse_feed
 from ..net import FetchError
 from ..util import detect_lang, host_of, now_ts, parse_date, strip_html, ts_to_date, utc_iso
-from . import Task, make_item, or_group
+from . import Task, make_item, or_group, query_meta
 
 # ---------------------------------------------------------------- Bing News
 
@@ -28,7 +28,8 @@ def bing_tasks(ctx) -> list:
         if not mk or not p or not p["q"]:
             continue
         out.append(Task("bing", "bing:" + code, "Bing News · %s" % mk[1],
-                        partial(_run_bing, code=code, mk=mk, interval=interval), group=code))
+                        partial(_run_bing, code=code, mk=mk, interval=interval), group=code,
+                        meta=query_meta(p["q"][:3], p.get("ctx", [])[:2])))
     return out
 
 
@@ -63,7 +64,10 @@ def _run_bing(ctx, task, code, mk, interval) -> int:
 def openalex_tasks(ctx) -> list:
     if not (ctx.plan.get("en") or {}).get("q"):
         return []
-    return [Task("openalex", "openalex", "OpenAlex · научные публикации", _run_openalex, group="academic")]
+    en = ctx.plan["en"]
+    terms = en["q"][:3] + (ctx.plan.get("ru") or {}).get("q", [])[:1]
+    return [Task("openalex", "openalex", "OpenAlex · научные публикации", _run_openalex, group="academic",
+                 meta=query_meta(terms, en.get("ctx", [])[:3]))]
 
 
 def _run_openalex(ctx, task) -> int:
@@ -108,7 +112,9 @@ def _run_openalex(ctx, task) -> int:
 def worldbank_tasks(ctx) -> list:
     if not (ctx.plan.get("en") or {}).get("q"):
         return []
-    return [Task("worldbank", "worldbank", "Всемирный банк · документы и доклады", _run_wb, group="intl_org")]
+    en = ctx.plan["en"]
+    return [Task("worldbank", "worldbank", "Всемирный банк · документы и доклады", _run_wb, group="intl_org",
+                 meta=query_meta(en["q"][:1], en.get("ctx", [])[:1]))]
 
 
 def _run_wb(ctx, task) -> int:
@@ -152,7 +158,9 @@ def _run_wb(ctx, task) -> int:
 def govuk_tasks(ctx) -> list:
     if not (ctx.plan.get("en") or {}).get("q"):
         return []
-    return [Task("govuk", "govuk", "GOV.UK · официальные публикации", _run_govuk, group="official")]
+    en = ctx.plan["en"]
+    return [Task("govuk", "govuk", "GOV.UK · официальные публикации", _run_govuk, group="official",
+                 meta=query_meta(en["q"][:1], en.get("ctx", [])[:1]))]
 
 
 def _run_govuk(ctx, task) -> int:
@@ -181,8 +189,11 @@ def reliefweb_tasks(ctx) -> list:
     app = (ctx.settings.get("reliefweb_appname") or "").strip()
     if not app:
         return []
+    en = ctx.plan.get("en") or {}
+    if not en.get("q"):
+        return []
     return [Task("reliefweb", "reliefweb", "ReliefWeb · доклады ООН и НКО", partial(_run_rw, app=app),
-                 group="intl_org")]
+                 group="intl_org", meta=query_meta(en["q"][:3]))]
 
 
 def _run_rw(ctx, task, app) -> int:

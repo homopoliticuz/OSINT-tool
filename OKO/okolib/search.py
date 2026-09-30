@@ -10,6 +10,7 @@ import traceback
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 
+from .lexicon import ROLE_LABELS
 from .net import FetchError
 from .providers import extra, feeds, gdelt, gnews
 from .util import TermMatcher, norm_text, now_ts, ts_to_date, utc_iso
@@ -51,6 +52,45 @@ def sanitize_plan(plan, lang_codes) -> dict:
     return out
 
 
+def sanitize_origins(raw, plan: dict, topics, context) -> dict:
+    """Карта «нормализованный термин → происхождение» (ключевое слово, роль, языки).
+
+    Термины плана, которых нет в карте, считаются добавленными вручную (если карта передана)
+    или относятся к единственному ключевому слову запроса."""
+    out = {}
+    if isinstance(raw, dict):
+        for k, v in list(raw.items())[:800]:
+            if not isinstance(v, dict):
+                continue
+            nk = norm_text(str(k))[:120]
+            if not nk:
+                continue
+            role = v.get("role") if v.get("role") in ROLE_LABELS else "main"
+            langs = [str(x)[:8] for x in (v.get("langs") or []) if isinstance(x, str)][:12]
+            out[nk] = {"t": str(v.get("t") or k)[:120], "kw": str(v.get("kw") or "")[:120], "role": role,
+                       "of": str(v.get("of") or "")[:120], "langs": langs, "src": str(v.get("src") or "")[:20]}
+    given = bool(out)
+    topics = [str(x) for x in (topics or []) if str(x).strip()]
+    context = [str(x) for x in (context or []) if str(x).strip()]
+    kw0 = topics[0] if len(topics) == 1 else ""
+    c0 = context[0] if len(context) == 1 else ""
+    for code, p in plan.items():
+        for key, role in (("q", "main"), ("m", "form"), ("ctx", "ctx"), ("ctx_m", "ctx")):
+            for t in p.get(key) or []:
+                nk = norm_text(t)
+                if not nk:
+                    continue
+                cur = out.get(nk)
+                if cur is not None:
+                    if code not in cur["langs"] and len(cur["langs"]) < 12:
+                        cur["langs"].append(code)
+                    continue
+                r = role if (not given or role == "ctx") else "manual"
+                out[nk] = {"t": t, "kw": c0 if role == "ctx" else kw0, "role": r, "of": "", "langs": [code],
+                           "src": "user" if r == "manual" else ""}
+    return out
+
+
 class SearchCtx:
     def __init__(self, app, job, params):
         self.http = app.http
@@ -72,8 +112,33 @@ class SearchCtx:
         self.topic_matcher = TermMatcher(topic)
         self.ctx_matcher = TermMatcher(ctxt) if ctxt else None
         self.not_matcher = TermMatcher(nott) if nott else None
+        self.origins = sanitize_origins(params.get("origins"), self.plan, params.get("topics"),
+                                        params.get("context"))
         self.budget = {"gnews": int(self.settings.get("gnews_budget", 80))}
         self._lock = threading.Lock()
+        self._tl = threading.local()
+
+    # ------------------------------------------------------------ текущая задача (для «найдено по запросу»)
+    def set_task(self, task):
+        self._tl.task = task
+
+    def current_task(self):
+        return getattr(self._tl, "task", None)
+
+    def origin(self, term: str):
+        """Происхождение сработавшего термина (term — нормализованная форма из TermMatcher)."""
+        return self.origins.get(term) if term else None
+
+    def task_keywords(self, task) -> list:
+        """Ключевые слова, из которых построен запрос задачи."""
+        if "_kws" not in task.meta:
+            kws = []
+            for t in task.meta.get("terms") or []:
+                o = self.origins.get(norm_text(t))
+                if o and o["role"] != "ctx" and o["kw"] and o["kw"] not in kws:
+                    kws.append(o["kw"])
+            task.meta["_kws"] = kws
+        return task.meta["_kws"]
 
     def source_allowed(self, s) -> bool:
         return not self.types or s.get("type") in self.types
@@ -166,6 +231,7 @@ class SearchJob:
                 t = self.ctx.topic_matcher.find(item["snippet"])
                 if t:
                     item["hit"], item["term"] = "text", t
+        self._explain(item)
         if not item.get("source_id"):
             s = None
             if item.get("gn"):
@@ -196,6 +262,24 @@ class SearchJob:
             self.stats["unique"] = len(self.items)
             return True
 
+    def _explain(self, item: dict):
+        """Записать в материал, по какому ключевому слову / связанному термину и каким запросом он найден."""
+        ctx = self.ctx
+        o = ctx.origin(item.get("term") or "")
+        if o:
+            item.update(kw=o["kw"], role=o["role"], of=o.get("of", ""), tl=o.get("langs", [])[:6])
+        task = ctx.current_task()
+        if task is not None:
+            if not o:
+                kws = ctx.task_keywords(task)
+                if kws:
+                    item.update(kw=", ".join(kws), role="engine", of="", tl=[])
+            item["q"] = [{"t": task.label, "q": task.meta.get("query", "")}]
+        if ctx.ctx_matcher and not item.get("ctx_term"):
+            c = ctx.ctx_matcher.find(item["title"]) or ctx.ctx_matcher.find(item.get("snippet") or "")
+            if c:
+                item["ctx_term"] = c
+
     @staticmethod
     def _merge(a: dict, b: dict):
         for k in ("prov", "via"):
@@ -216,8 +300,17 @@ class SearchJob:
             a["src_name"] = b["src_name"]
         if b.get("ts") and (not a.get("ts") or b["ts"] < a["ts"]):
             a["ts"] = b["ts"]
-        if HIT_RANK.get(b.get("hit"), 0) > HIT_RANK.get(a.get("hit"), 0):
-            a["hit"], a["term"] = b["hit"], b.get("term", "")
+        ra, rb = HIT_RANK.get(a.get("hit"), 0), HIT_RANK.get(b.get("hit"), 0)
+        if rb > ra or (rb == ra and not a.get("kw") and b.get("kw")):
+            for k in ("hit", "term", "kw", "role", "of", "tl"):
+                if k in b:
+                    a[k] = b[k]
+        if b.get("ctx_term") and not a.get("ctx_term"):
+            a["ctx_term"] = b["ctx_term"]
+        for x in b.get("q") or []:
+            qs = a.setdefault("q", [])
+            if x not in qs and len(qs) < 5:
+                qs.append(x)
         if b.get("related"):
             have = {r["title"] for r in a.get("related", [])}
             a.setdefault("related", []).extend(r for r in b["related"] if r["title"] not in have)
@@ -297,6 +390,7 @@ class SearchJob:
             st["status"] = "run"
             self.emit("task", dict(st))
             t0 = time.time()
+            ctx.set_task(t)
             try:
                 n = t.fn(ctx, t) or 0
                 st.update(status="ok", n=n)
@@ -307,6 +401,8 @@ class SearchJob:
             except Exception as e:  # noqa: BLE001
                 log.error("task %s failed: %s", t.key, traceback.format_exc())
                 st.update(status="error", err="внутренняя ошибка: %s" % str(e)[:160])
+            finally:
+                ctx.set_task(None)
             st["ms"] = int((time.time() - t0) * 1000)
             for k in ("note", "coverage", "partial"):
                 if t.meta.get(k):

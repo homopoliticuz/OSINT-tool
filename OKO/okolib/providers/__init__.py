@@ -80,3 +80,17 @@ def or_group(terms, engine: str = "google") -> str:
     if len(parts) == 1:
         return parts[0]
     return "(" + " OR ".join(parts) + ")"
+
+
+def query_meta(terms, ctx_terms=None, not_terms=None, suffix: str = "", engine: str = "google") -> dict:
+    """Читаемый запрос задачи и его термины — для пояснения «найдено по запросу» в карточке."""
+    q = or_group(list(terms or []), engine)
+    if ctx_terms:
+        q += " " + or_group(list(ctx_terms), engine)
+    for x in not_terms or []:
+        qt = quote_term(x, engine)
+        if qt:
+            q += " -" + qt
+    if suffix:
+        q += " " + suffix
+    return {"query": q.strip(), "terms": list(terms or [])}

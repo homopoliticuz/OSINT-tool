@@ -21,7 +21,7 @@ from http.server import BaseHTTPRequestHandler
 from urllib.parse import parse_qs, quote, unquote, urlsplit
 
 from . import VERSION, htmlmeta, pdfprint, webdata
-from .lexicon import Languages, Lexicon, build_plan
+from .lexicon import Languages, Lexicon, build_plan, plan_origins
 from .net import FetchError, HttpClient
 from .providers import gnews
 from .registry import TYPE_LABELS, Registry
@@ -321,7 +321,8 @@ class Handler(BaseHTTPRequestHandler):
         context = exp(data.get("context") or [], False)
         exclude = exp(data.get("exclude") or [], False)
         plan = build_plan(topics, context, exclude, langs)
-        return {"topics": topics, "context": context, "exclude": exclude, "plan": plan}
+        return {"topics": topics, "context": context, "exclude": exclude, "plan": plan,
+                "origins": plan_origins(topics, context)}
 
     # ------------------------------------------------------------ поиск (поток событий)
     def _search(self, params: dict):

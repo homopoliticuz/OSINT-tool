@@ -80,14 +80,22 @@ class Lexicon:
             if ent and ent.get("terms", {}).get(code):
                 q = list(ent["terms"][code])
                 m = list(ent.get("match", {}).get(code, []))
+                rel = {}  # связанный термин → к чему относится (столица, глава государства, города…)
                 if related:
                     for rid in ent.get("related", []):
                         r = self.by_id.get(rid)
                         if r and r.get("terms", {}).get(code):
-                            q.extend(r["terms"][code][:1])
-                            m.extend(r.get("match", {}).get(code, []))
-                    m.extend(ent.get("extra_match", {}).get(code, []))
-                out["langs"][code] = {"q": _uniq(q), "m": _uniq(m), "src": "lexicon", "note": "словарь ОКО"}
+                            t0 = r["terms"][code][0]
+                            q.append(t0)
+                            rel.setdefault(t0, r["label"])
+                            for x in r.get("match", {}).get(code, []):
+                                m.append(x)
+                                rel.setdefault(x, r["label"])
+                    for x in ent.get("extra_match", {}).get(code, []):
+                        m.append(x)
+                        rel.setdefault(x, "")
+                out["langs"][code] = {"q": _uniq(q), "m": _uniq(m), "src": "lexicon", "note": "словарь ОКО",
+                                      "rel": rel}
             else:
                 missing.append(code)
         if missing and allow_network:
@@ -222,6 +230,56 @@ def _uniq(seq):
     return out
 
 
+ROLE_LABELS = {
+    "main": "ключевое слово или его перевод",
+    "form": "словоформа ключевого слова",
+    "related": "связанный термин",
+    "ctx": "контекст",
+    "manual": "термин, добавленный вручную",
+}
+
+
+def plan_origins(topics: list[dict], context: list[dict] | None = None) -> dict:
+    """Происхождение каждого поискового термина: исходное ключевое слово, роль, языки, источник перевода.
+
+    Ключ — нормализованный термин (как его возвращает TermMatcher.find)."""
+    out: dict = {}
+
+    def put(term, kw, role, code, src, of=""):
+        k = norm_text(term)
+        if not k:
+            return
+        cur = out.get(k)
+        if cur is None:
+            out[k] = {"t": term, "kw": kw, "role": role, "of": of, "langs": [code], "src": src}
+        elif cur["kw"] == kw and cur["role"] == role and code not in cur["langs"]:
+            cur["langs"].append(code)
+
+    for e in topics or []:
+        for code, t in (e.get("langs") or {}).items():
+            rel = t.get("rel") or {}
+            for term in t.get("q") or []:
+                if term not in rel:
+                    put(term, e["topic"], "main", code, t.get("src", ""))
+    for e in topics or []:
+        for code, t in (e.get("langs") or {}).items():
+            rel = t.get("rel") or {}
+            for term in (t.get("q") or []) + (t.get("m") or []):
+                if term in rel:
+                    put(term, e["topic"], "related", code, t.get("src", ""), rel[term])
+    for e in topics or []:
+        for code, t in (e.get("langs") or {}).items():
+            rel = t.get("rel") or {}
+            for term in t.get("m") or []:
+                if term not in rel:
+                    put(term, e["topic"], "form", code, t.get("src", ""))
+    for e in context or []:
+        for code, t in (e.get("langs") or {}).items():
+            for term in (t.get("q") or []) + (t.get("m") or []):
+                put(term, e["topic"], "ctx", code, t.get("src", ""))
+    return out
+
+
 def build_plan(expansions: list[dict], context: list[dict], exclude: list[dict], langs) -> dict:
     """Собрать итоговые термины по языкам: тема(ы) ИЛИ, контекст И, исключения НЕ."""
     plan = {}
@@ -241,4 +299,4 @@ def build_plan(expansions: list[dict], context: list[dict], exclude: list[dict],
     return plan
 
 
-__all__ = ["Languages", "Lexicon", "build_plan"]
+__all__ = ["Languages", "Lexicon", "build_plan", "plan_origins", "ROLE_LABELS"]

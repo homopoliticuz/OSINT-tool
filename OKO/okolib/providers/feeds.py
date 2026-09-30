@@ -29,7 +29,7 @@ def rss_tasks(ctx) -> list:
                 pending += 1
             continue
         out.append(Task("rss", "rss:" + s["id"], s["name"], partial(_run_rss, source=s, feeds=feeds),
-                        group=s.get("type", "")))
+                        group=s.get("type", ""), meta={"query": "", "terms": []}))
     if pending:
         ctx.note("Ленты ещё не обнаружены для %d источников — идёт фоновая проверка реестра" % pending)
     return out
@@ -97,7 +97,8 @@ def wp_tasks(ctx) -> list:
             if p.get("ctx"):
                 term += " " + p["ctx"][0]
             out.append(Task("wp", "wp:%s:%s" % (s["id"], code), "%s (%s)" % (s["name"], code.upper()),
-                            partial(_run_wp, source=s, api=api, term=term, code=code), group=code))
+                            partial(_run_wp, source=s, api=api, term=term, code=code), group=code,
+                            meta={"query": "поиск по сайту: " + term, "terms": [p["q"][0]]}))
     return out
 
 

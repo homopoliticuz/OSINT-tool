@@ -16,7 +16,8 @@ sys.path.insert(0, ROOT)
 FIX = os.path.join(ROOT, "tests", "fixtures", "upstream")
 
 from okolib import feedparse, htmlmeta  # noqa: E402
-from okolib.lexicon import Languages, Lexicon, build_plan  # noqa: E402
+from okolib.lexicon import Languages, Lexicon, build_plan, plan_origins  # noqa: E402
+from okolib.search import sanitize_origins  # noqa: E402
 from okolib.net import FetchError, FixtureTransport, HttpClient, check_public_host  # noqa: E402
 from okolib.providers import gdelt, gnews  # noqa: E402
 from okolib.registry import Registry  # noqa: E402
@@ -198,6 +199,26 @@ class TestLexicon(unittest.TestCase):
         self.assertIn("zh-Hant", plan)
         self.assertEqual(plan["zh-Hant"]["q"][0], "烏茲別克")
 
+    def test_term_origins(self):
+        core = [l["code"] for l in self.langs.items if l["core"]]
+        e = self.lex.expand("Узбекистан", core, related=True, allow_network=False)
+        ctx = self.lex.expand("газ", ["ru"], related=False, allow_network=False)
+        o = plan_origins([e], [ctx])
+        self.assertEqual(o[norm_text("Uzbekistan")]["kw"], "Узбекистан")
+        self.assertEqual(o[norm_text("Uzbekistan")]["role"], "main")
+        self.assertIn("en", o[norm_text("Uzbekistan")]["langs"])
+        self.assertEqual(o[norm_text("Ташкент")]["role"], "related")
+        self.assertEqual(o[norm_text("Tashkent")]["of"], "Ташкент")
+        self.assertEqual(o[norm_text("узбек")]["role"], "form")
+        self.assertEqual(o[norm_text("самарканд")]["role"], "related")
+        self.assertEqual(o[norm_text("газ")]["role"], "ctx")
+        plan = build_plan([e], [ctx], [], core)
+        plan["en"]["q"].append("Uzbek economy")        # добавлено вручную в «Термины»
+        full = sanitize_origins(o, plan, ["Узбекистан"], ["газ"])
+        self.assertEqual(full[norm_text("Uzbek economy")]["role"], "manual")
+        bare = sanitize_origins(None, plan, ["Узбекистан"], [])   # клиент без карты происхождения
+        self.assertEqual(bare[norm_text("Tashkent")]["kw"], "Узбекистан")
+
     def test_every_lexicon_entity_is_valid(self):
         codes = set(self.langs.by_code) | {"zh-Hant"}
         for ent in self.lex.entities:
@@ -313,7 +334,7 @@ class TestServerIntegration(unittest.TestCase):
                                                   "langs": langs, "related": True}))
         now = int(time.time())
         params = {"topics": ["Узбекистан"], "langs": langs, "plan": exp["plan"], "t_from": now - 7 * 86400,
-                  "t_to": now, "tz_offset": 300}
+                  "t_to": now, "tz_offset": 300, "origins": exp["origins"]}
         resp = self.call("/api/search", params)
         items, done = {}, None
         for block in resp.read().decode("utf-8").split("\n\n"):
@@ -338,6 +359,15 @@ class TestServerIntegration(unittest.TestCase):
         self.assertTrue({"ru", "en", "zh", "ja", "ar", "fa", "ur", "tr", "ko", "de"} <= langs_found, langs_found)
         merged = [it for it in items.values() if len(it["prov"]) > 1]
         self.assertTrue(merged, "дубли из разных каналов должны склеиваться")
+        # «найдено по»: ключевое слово, сработавший термин и запрос
+        for it in items.values():
+            self.assertEqual(it.get("kw"), "Узбекистан", it["title"])
+            self.assertTrue(it.get("q"), it["title"])
+        rel = [it for it in items.values() if it.get("role") == "related"]
+        self.assertTrue(any("Мирзиёев" in it["of"] for it in rel), [it["title"] for it in rel])
+        gn = [it for it in items.values() if any(x["t"].startswith("Google News") for x in it["q"])]
+        self.assertTrue(gn and all("Uzbekistan" in x["q"] or "Узбекистан" in x["q"] or x["q"]
+                                   for it in gn for x in it["q"]))
         self.assertTrue(done.get("report"))
         rep = json.load(self.call("/api/reports/" + urllib.request.quote(done["report"])))
         self.assertEqual(len(rep["items"]), len(items))
