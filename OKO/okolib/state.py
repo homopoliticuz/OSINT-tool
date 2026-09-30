@@ -17,7 +17,37 @@ DEFAULT_SETTINGS = {
     "auto_discovery": True,
     "providers": None,          # None — набор по умолчанию
     "report_keep": 120,
+    # соцсети и внешние сервисы (ключи хранятся только на этом компьютере)
+    "tg_channels_add": [],
+    "tg_channels_off": [],
+    "social_platforms": None,   # None — все платформы
+    "vk_token": "",
+    "x_bearer": "",
+    "brave_key": "",
+    "gcse_key": "",
+    "gcse_cx": "",
+    "youtube_key": "",
+    "deepl_key": "",
+    # Telegram-бот и доступ с телефона
+    "tg_bot_token": "",
+    "tg_bot_allowed": [],
+    "tg_bot_topic": "Узбекистан",
+    "tg_bot_digest": [],        # [{"chat": id, "time": "08:30", "topic": "..."}]
+    "lan_password": "",
 }
+SECRET_KEYS = ("vk_token", "x_bearer", "brave_key", "gcse_key", "youtube_key", "deepl_key", "tg_bot_token",
+               "lan_password")
+MASK = "••••"
+
+
+def public_settings(s: dict) -> dict:
+    """Настройки для интерфейса: секреты скрыты (видны только последние символы)."""
+    out = dict(s)
+    for k in SECRET_KEYS:
+        v = str(out.get(k) or "")
+        out[k] = (MASK + v[-4:]) if v else ""
+        out[k + "_set"] = bool(v)
+    return out
 
 
 class State:
@@ -49,8 +79,10 @@ class State:
         with self._lock:
             s = self.settings()
             for k, v in (patch or {}).items():
+                if k in SECRET_KEYS and isinstance(v, str) and v.startswith(MASK):
+                    continue  # маска — значение не менялось
                 if k in DEFAULT_SETTINGS or k.startswith("ui_"):
-                    s[k] = v
+                    s[k] = v.strip() if isinstance(v, str) else v
             s["gnews_budget"] = max(10, min(300, int(s.get("gnews_budget") or 120)))
             s["max_seconds"] = max(60, min(900, int(s.get("max_seconds") or 300)))
             write_json(self._p("settings"), s)

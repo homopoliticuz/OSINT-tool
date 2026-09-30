@@ -1,0 +1,4 @@
+{"objectClassName": "domain", "ldhName": "example-analytics.uz", "status": ["active"],
+ "events": [{"eventAction": "registration", "eventDate": "2014-03-11T00:00:00Z"}, {"eventAction": "expiration", "eventDate": "2027-03-11T00:00:00Z"}],
+ "entities": [{"roles": ["registrar"], "vcardArray": ["vcard", [["version", {}, "text", "4.0"], ["fn", {}, "text", "UZINFOCOM"]]]}],
+ "nameservers": [{"ldhName": "NS1.EXAMPLE-ANALYTICS.UZ"}]}

@@ -43,7 +43,33 @@ def _cache_ttl(t_to: int) -> int:
     return 12 * 3600 if now_ts() - t_to > 2 * 86400 else 10 * 60
 
 
+def watch_tasks(ctx) -> list:
+    """Мониторинг: свежие публикации наблюдаемых источников через Google News (site:), без терминов."""
+    groups = {}
+    for s in ctx.registry.sources:
+        if s.get("off") or not ctx.source_allowed(s):
+            continue
+        code = next((l for l in s.get("lang", []) if ctx.languages.by_code.get(l, {}).get("gnews")), "en")
+        groups.setdefault(code, []).extend(s["domains"][:1])
+    out = []
+    for code, domains in groups.items():
+        ed = ctx.languages.by_code[code]["gnews"][0]
+        p = ctx.plan.get(code) or {}
+        terms = p.get("q", [])[:3]
+        for i in range(0, len(domains), SITE_GROUP):
+            chunk = domains[i:i + SITE_GROUP]
+            meta = query_meta(terms, suffix="site:(%s)" % ", ".join(chunk[:4]))
+            meta["host"] = "news.google.com"
+            out.append(Task("gnews", "gnw:%s:%d" % (code, i // SITE_GROUP),
+                            "Google News · мониторинг %s #%d" % (code.upper(), i // SITE_GROUP + 1),
+                            partial(_run, ed=ed, code=code, terms=terms, ctx_terms=[], not_terms=[], sites=chunk),
+                            group="watch", meta=meta))
+    return out
+
+
 def tasks(ctx) -> list:
+    if ctx.watch:
+        return watch_tasks(ctx)
     out = []
     for code in ctx.lang_codes:
         lang = ctx.languages.by_code.get(code)
@@ -102,7 +128,8 @@ def tasks(ctx) -> list:
     return out + [t for _, t in site_tasks]
 
 
-def _run(ctx, task, *, ed, code, terms, ctx_terms, not_terms, sites, t_from=None, t_to=None, depth=0) -> int:
+def _run(ctx, task, *, ed, code, terms, ctx_terms, not_terms, sites, t_from=None, t_to=None, depth=0,
+         transform=None) -> int:
     t_from = ctx.t_from if t_from is None else t_from
     t_to = ctx.t_to if t_to is None else t_to
     if not ctx.take_budget("gnews"):
@@ -121,6 +148,10 @@ def _run(ctx, task, *, ed, code, terms, ctx_terms, not_terms, sites, t_from=None
     added = 0
     for it in feed["items"]:
         item = convert(it, code, "%s:%s" % (gl, hl))
+        if transform is not None:
+            item = transform(item)
+            if item is None:
+                continue
         if ctx.add(item):
             added += 1
     # выдача переполнена — делим период пополам, чтобы не потерять материалы
@@ -131,7 +162,8 @@ def _run(ctx, task, *, ed, code, terms, ctx_terms, not_terms, sites, t_from=None
                 break
             try:
                 added += _run(ctx, task, ed=ed, code=code, terms=terms, ctx_terms=ctx_terms,
-                              not_terms=not_terms, sites=sites, t_from=a, t_to=b, depth=depth + 1)
+                              not_terms=not_terms, sites=sites, t_from=a, t_to=b, depth=depth + 1,
+                              transform=transform)
             except FetchError as e:
                 task.meta.setdefault("partial", []).append(e.short())
     return added

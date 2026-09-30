@@ -1,0 +1,33 @@
+{
+  "_comment": "Соцсети в ОКО. telegram_channels — публичные каналы, которые ОКО просматривает без ключей (веб-версия t.me/s/<канал>, поиск внутри канала). source — идентификатор издания в реестре (для уровня авторитетности). Каналы можно добавлять в «Настройки → Соцсети». Неработающие каналы ОКО временно отключает само. search — адрес поиска на самой платформе (открывается в браузере, где вы авторизованы).",
+  "platforms": {
+    "telegram": {"name": "Telegram", "sites": ["t.me"], "search": "https://tgstat.ru/search?q={q}", "note": "публичные каналы — без ключа; глобальный поиск по всем каналам — только в приложении Telegram или через TGStat"},
+    "x": {"name": "X (Twitter)", "sites": ["x.com", "twitter.com"], "search": "https://x.com/search?q={q}&f=live", "note": "поиск через API X — платный доступ (Basic и выше); без ключа — через поисковик по сайту"},
+    "linkedin": {"name": "LinkedIn", "sites": ["linkedin.com/posts", "linkedin.com/pulse", "linkedin.com/company", "linkedin.com/feed"], "search": "https://www.linkedin.com/search/results/content/?keywords={q}&sortBy=%22date_posted%22", "note": "открытого API поиска нет — только публичные публикации через поисковик"},
+    "facebook": {"name": "Facebook", "sites": ["facebook.com"], "search": "https://www.facebook.com/search/posts/?q={q}", "note": "поиск публикаций через API закрыт Meta — публичные страницы через поисковик"},
+    "instagram": {"name": "Instagram", "sites": ["instagram.com"], "search": "https://www.instagram.com/explore/search/keyword/?q={q}", "note": "поиск по хештегам — только API Meta для бизнес-аккаунтов; публичные публикации — через поисковик"},
+    "vk": {"name": "ВКонтакте", "sites": ["vk.com", "vk.ru"], "search": "https://vk.com/search?c%5Bsection%5D=statuses&c%5Bq%5D={q}", "note": "полный поиск по записям — через API VK с сервисным ключом приложения"},
+    "whatsapp": {"name": "WhatsApp (каналы)", "sites": ["whatsapp.com/channel"], "search": "https://www.google.com/search?q=site%3Awhatsapp.com%2Fchannel+{q}", "note": "поиска по WhatsApp не существует: сообщения зашифрованы; видны только публичные каналы, проиндексированные поисковиками"},
+    "youtube": {"name": "YouTube", "sites": ["youtube.com"], "search": "https://www.youtube.com/results?search_query={q}&sp=CAI%253D", "note": "поиск через YouTube Data API (бесплатный ключ Google)"}
+  },
+  "telegram_channels": [
+    {"id": "kunuzofficial", "name": "Kun.uz", "lang": "uz", "country": "UZ", "source": "kun_uz"},
+    {"id": "gazetauz", "name": "Газета.uz", "lang": "ru", "country": "UZ", "source": "gazeta_uz"},
+    {"id": "podrobnouz", "name": "Podrobno.uz", "lang": "ru", "country": "UZ", "source": "podrobno"},
+    {"id": "spotuz", "name": "Spot.uz", "lang": "ru", "country": "UZ"},
+    {"id": "ozodlik", "name": "Озодлик (Радио Свобода)", "lang": "uz", "country": "UZ"},
+    {"id": "bbcuzbek", "name": "BBC O'zbek", "lang": "uz", "country": "GB", "source": "bbc_uzbek"},
+    {"id": "fergananews", "name": "Фергана", "lang": "ru", "country": "RU"},
+    {"id": "ordakz", "name": "Orda.kz", "lang": "ru", "country": "KZ"},
+    {"id": "rian_ru", "name": "РИА Новости", "lang": "ru", "country": "RU", "source": "ria"},
+    {"id": "tass_agency", "name": "ТАСС", "lang": "ru", "country": "RU", "source": "tass"},
+    {"id": "interfaxonline", "name": "Интерфакс", "lang": "ru", "country": "RU", "source": "interfax"},
+    {"id": "rbc_news", "name": "РБК", "lang": "ru", "country": "RU", "source": "rbc"},
+    {"id": "kommersant", "name": "Коммерсантъ", "lang": "ru", "country": "RU", "source": "kommersant"},
+    {"id": "vedomosti", "name": "Ведомости", "lang": "ru", "country": "RU", "source": "vedomosti"},
+    {"id": "izvestia", "name": "Известия", "lang": "ru", "country": "RU", "source": "izvestia"},
+    {"id": "meduzalive", "name": "Медуза", "lang": "ru", "country": "LV", "source": "meduza"},
+    {"id": "bbcrussian", "name": "Русская служба Би-би-си", "lang": "ru", "country": "GB", "source": "bbc_russian"},
+    {"id": "valdaiclub", "name": "Клуб «Валдай»", "lang": "ru", "country": "RU"}
+  ]
+}

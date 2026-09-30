@@ -20,7 +20,7 @@ from okolib.health import Health, classify  # noqa: E402
 from okolib.lexicon import Languages, Lexicon, build_plan, plan_origins  # noqa: E402
 from okolib.search import sanitize_origins  # noqa: E402
 from okolib.net import FetchError, FixtureTransport, HttpClient, check_public_host  # noqa: E402
-from okolib.providers import gdelt, gnews  # noqa: E402
+from okolib.providers import gdelt, gnews, reports, social  # noqa: E402
 from okolib.registry import Registry  # noqa: E402
 from okolib.util import TermMatcher, canonical_url, detect_lang, norm_text, parse_date  # noqa: E402
 
@@ -174,6 +174,46 @@ class TestProviders(unittest.TestCase):
         it = gdelt.convert({"url": "https://www.isna.ir/x", "title": "T", "seendate": "20260929T100000Z",
                             "domain": "isna.ir", "language": "Persian", "sourcecountry": "Iran"}, None)
         self.assertEqual((it["lang"], it["country"], it["ts"]), ("fa", "IR", 1790676000))
+
+
+class TestSocial(unittest.TestCase):
+    def test_parse_telegram(self):
+        with open(os.path.join(FIX, "tg_kunuz.html"), "rb") as f:
+            raw = FixtureTransport(FIX)._subst(f.read()).decode("utf-8")
+        msgs = social.parse_tg(raw, "kunuzofficial")
+        self.assertEqual(len(msgs), 4)
+        m0, m1 = msgs[0], msgs[1]
+        self.assertEqual(m0["url"], "https://t.me/kunuzofficial/90001")
+        self.assertTrue(m0["text"].startswith("O'zbekiston va Qozog'iston"))
+        self.assertIn("\n", m0["text"])
+        self.assertEqual(m0["views"], "24.1K")
+        self.assertEqual(m1["fwd"]["name"], "Prezident matbuot xizmati")
+        self.assertEqual(m1["fwd"]["url"], "https://t.me/prezidentpress/5555")
+        self.assertTrue(all(m["ts"] for m in msgs))
+
+    def test_channels_and_catalogs(self):
+        reg = Registry(os.path.join(ROOT, "data", "sources.json"), os.path.join(tempfile.mkdtemp(), "u.json"),
+                       os.path.join(tempfile.mkdtemp(), "d.json"), HttpClient(None))
+        for ch in social.data()["telegram_channels"]:
+            self.assertEqual(social.clean_channel(ch["id"]), ch["id"])
+            if ch.get("source"):
+                self.assertIn(ch["source"], reg.by_id, ch)
+        self.assertEqual(social.clean_channel("https://t.me/s/kunuzofficial?q=x"), "kunuzofficial")
+        self.assertEqual(social.clean_channel("@gazetauz"), "gazetauz")
+        self.assertEqual(social.clean_channel("t.me/+invite"), "")
+        chans = social.telegram_channels({"tg_channels_add": [{"id": "@newchannel_uz", "lang": "ru"}],
+                                          "tg_channels_off": ["kunuzofficial"]})
+        ids = [c["id"] for c in chans]
+        self.assertIn("newchannel_uz", ids)
+        self.assertNotIn("kunuzofficial", ids)
+        rm = reports.ReportMatcher()
+        self.assertEqual(rm.find("UNDP launches Human Development Report 2026"), "hdr")
+        self.assertTrue(rm.reportish("New Global Peace Index shows decline"))
+        for r in reports.catalog()["reports"]:
+            self.assertIn(r["src"], reg.by_id, r["id"])
+        links = social.search_links("Узбекистан")
+        self.assertEqual({x["id"] for x in links}, set(social.platforms()))
+        self.assertTrue(all("%D0%A3" in x["url"] for x in links))
 
 
 class TestLexicon(unittest.TestCase):
@@ -482,6 +522,12 @@ class TestServerIntegration(unittest.TestCase):
         self.assertTrue({"ru", "en", "zh", "ja", "ar", "fa", "ur", "tr", "ko", "de"} <= langs_found, langs_found)
         merged = [it for it in items.values() if len(it["prov"]) > 1]
         self.assertTrue(merged, "дубли из разных каналов должны склеиваться")
+        # Telegram: сообщения канала по теме, пересланное — с первоисточником; без темы и старые — нет
+        tg = [it for it in items.values() if it["prov"] == ["telegram"]]
+        self.assertEqual({it["url"] for it in tg}, {"https://t.me/kunuzofficial/90001", "https://t.me/kunuzofficial/90002"})
+        self.assertTrue(all(it["kind"] == "social" and it["extra"]["platform"] == "telegram" for it in tg))
+        fwd = [it for it in tg if it["extra"].get("fwd")]
+        self.assertEqual(fwd[0]["extra"]["fwd"]["name"], "Prezident matbuot xizmati")
         # «найдено по»: ключевое слово, сработавший термин и запрос
         for it in items.values():
             self.assertEqual(it.get("kw"), "Узбекистан", it["title"])
@@ -511,6 +557,68 @@ class TestServerIntegration(unittest.TestCase):
         self.assertEqual(relevance.level({"hit": "engine"}, dict(mm, hits=0, first=None)), "absent")
         self.assertEqual(relevance.level({"hit": "engine"}), "unverified")
         self.assertEqual(relevance.level({"hit": "title", "role": "related"}), "rtitle")
+
+    def test_person_profile_and_expand(self):
+        c = json.load(self.call("/api/person/search?q=" + urllib.request.quote("Мирзиёев")))["candidates"]
+        self.assertEqual([x["id"] for x in c], ["Q999001"])            # фамилия-«не человек» отброшена
+        p = json.load(self.call("/api/person/Q999001"))
+        self.assertEqual(p["positions"][0]["label"], "Президент Узбекистана")
+        self.assertEqual(p["positions"][0]["from"], "2016-12-14")
+        self.assertEqual(p["born"], "1957-07-24")
+        self.assertEqual({x["platform"] for x in p["socials"]}, {"x", "telegram"})
+        self.assertIn("Shavkat Miromonovich Mirziyoyev", p["names"]["en"])
+        self.assertNotIn("Mirziyoyev", p["names"]["en"])              # одна фамилия — слишком неоднозначно
+        exp = json.load(self.call("/api/expand", {"topics": ["Шавкат Мирзиёев"], "langs": ["ru", "en", "ja", "tr"],
+                                                  "persons": {"Шавкат Мирзиёев": "Q999001"}}))
+        self.assertEqual(exp["plan"]["ja"]["q"][0], "シャヴカト・ミルズィヨエフ")
+        self.assertEqual(exp["plan"]["tr"]["q"][0], "Shavkat Mirziyoyev")  # нет турецкого — английское написание
+
+    def test_osint(self):
+        e = json.load(self.call("/api/osint", {"value": "info@example-analytics.uz"}))
+        self.assertEqual(e["type"], "email")
+        facts = {f["k"]: f["v"] for f in e["facts"]}
+        self.assertEqual(facts["Домен зарегистрирован"], "2014-03-11")
+        checks = {c["name"]: c["status"] for c in e["checks"]}
+        self.assertEqual(checks["Почтовый сервер (MX)"], "ok")
+        self.assertEqual(checks["Публичный профиль Gravatar"], "none")
+        u = json.load(self.call("/api/osint", {"value": "@okoanalyst"}))
+        st = {c["name"]: (c["status"], c["detail"]) for c in u["checks"]}
+        self.assertEqual(st["GitHub"][0], "found")
+        self.assertIn("Tashkent", st["GitHub"][1])
+        self.assertEqual(st["Telegram"], ("found", "OKO Analyst · 1 250 subscribers"))
+        self.assertEqual(st["Reddit"][0], "none")
+        d = json.load(self.call("/api/osint", {"value": "example-analytics.uz"}))
+        facts = {f["k"]: f["v"] for f in d["facts"]}
+        self.assertEqual(facts["Регистратор"], "UZINFOCOM")
+        self.assertEqual(facts["Первая копия в веб-архиве"], "2014-04-12")
+        self.assertEqual(facts["Заголовок страницы"], "Центр анализа — Главная")
+        ph = json.load(self.call("/api/osint", {"value": "+998 90 123-45-67"}))
+        facts = {f["k"]: f["v"] for f in ph["facts"]}
+        self.assertEqual(ph["type"], "phone")
+        self.assertEqual(facts["Страна по коду"], "Узбекистан")
+        self.assertTrue(facts["Оператор (по коду сети)"].startswith("Beeline"))
+
+    def test_social_catalog_translate_settings(self):
+        so = json.load(self.call("/api/social?q=" + urllib.request.quote("Узбекистан")))
+        self.assertIn("telegram", so["platforms"])
+        self.assertFalse(so["keys"]["brave"])
+        self.assertEqual(len(so["links"]), len(so["platforms"]))
+        cat = json.load(self.call("/api/catalog/reports"))
+        self.assertGreater(len(cat["reports"]), 50)
+        tr = json.load(self.call("/api/translate", {"texts": ["газ", "газ"], "to": "en"}))
+        self.assertEqual(tr["texts"], ["gas", "gas"])          # фикстура переводчика всегда отвечает «gas»
+        self.assertEqual(tr["engine"], "Google")
+        art = json.load(self.call("/api/translate/article", {
+            "url": "https://carnegieendowment.org/research/2026/09/central-asia-washington"}))
+        self.assertTrue(art["ok"])
+        self.assertTrue(all(b.get("tr") for b in art["blocks"]))
+        st = json.load(self.call("/api/settings", {"brave_key": "BSA-secret-12345"}))
+        self.assertEqual(st["brave_key"], "••••2345")
+        self.assertTrue(st["brave_key_set"])
+        st = json.load(self.call("/api/settings", {"brave_key": st["brave_key"]}))   # маска не затирает ключ
+        self.assertTrue(st["brave_key_set"])
+        st = json.load(self.call("/api/settings", {"brave_key": ""}))
+        self.assertFalse(st["brave_key_set"])
 
     def test_article_deep_check(self):
         url = urllib.request.quote("https://www.yahoo.com/news/uzbekistan-us-sign-critical-minerals-1.html", safe="")

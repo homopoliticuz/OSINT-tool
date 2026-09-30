@@ -20,19 +20,19 @@ import traceback
 from http.server import BaseHTTPRequestHandler
 from urllib.parse import parse_qs, quote, unquote, urlsplit
 
-from . import VERSION, htmlmeta, pdfprint, relevance, webdata
+from . import VERSION, htmlmeta, osint, pdfprint, person, relevance, translate, webdata
 from .health import Health
 from .lexicon import Languages, Lexicon, build_plan, plan_origins
 from .net import FetchError, HttpClient
-from .providers import gnews
+from .providers import gnews, reports as rep_provider, social
 from .registry import TYPE_LABELS, Registry
 from .search import PROVIDERS, SearchJob
-from .state import State
+from .state import State, public_settings
 from .util import is_http_url, norm_text, now_ts
 
 log = logging.getLogger("oko.server")
 MAX_BODY = 8 * 1024 * 1024
-STATE_DOCS = {"dossier", "history", "ui"}
+STATE_DOCS = {"dossier", "history", "ui", "watch"}
 
 
 class App:
@@ -75,8 +75,9 @@ class App:
         return {
             "version": VERSION,
             "languages": self.languages.items,
-            "providers": [{"id": p[0], "label": p[1], "default": p[4]} for p in PROVIDERS],
-            "settings": self.state.settings(),
+            "providers": [{"id": p[0], "label": p[1], "default": p[4], "modes": sorted(p[5]), "group": p[6]}
+                          for p in PROVIDERS],
+            "settings": public_settings(self.state.settings()),
             "types": TYPE_LABELS,
             "entities": [{"id": e["id"], "label": e["label"]} for e in self.lexicon.entities],
             "sources": len(self.registry.sources),
@@ -311,8 +312,34 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"ok": True})
         if route == "settings":
             if method == "GET":
-                return self._json(app.state.settings())
-            return self._json(app.state.update_settings(self._body()))
+                return self._json(public_settings(app.state.settings()))
+            return self._json(public_settings(app.state.update_settings(self._body())))
+        if route == "translate" and method == "POST":
+            data = self._body()
+            texts = [str(t)[:5000] for t in (data.get("texts") or [])][:120]
+            return self._json(translate.translate_many(app.http, texts, data.get("to") or "ru",
+                                                       deepl_key=app.state.settings().get("deepl_key", "")))
+        if route == "translate/article" and method == "POST":
+            return self._json(self._translate_article(str(self._body().get("url") or "")))
+        if route == "person/search" and method == "GET":
+            q = (qs.get("q") or [""])[0]
+            return self._json({"candidates": person.search(app.http, q, (qs.get("lang") or ["ru"])[0])})
+        if route.startswith("person/") and method == "GET":
+            return self._json(person.profile(app.http, route[len("person/"):]))
+        if route == "osint" and method == "POST":
+            return self._json(osint.analyze(app.http, str(self._body().get("value") or "")[:300], app.registry))
+        if route == "social" and method == "GET":
+            st = app.state.settings()
+            q = (qs.get("q") or [""])[0]
+            return self._json({"platforms": social.platforms(), "channels": social.telegram_channels(st),
+                               "default_channels": [c["id"] for c in social.data()["telegram_channels"]],
+                               "keys": {"vk": bool(st.get("vk_token")), "x": bool(st.get("x_bearer")),
+                                        "brave": bool(st.get("brave_key")),
+                                        "gcse": bool(st.get("gcse_key") and st.get("gcse_cx")),
+                                        "youtube": bool(st.get("youtube_key"))},
+                               "links": social.search_links(q) if q else []})
+        if route == "catalog/reports" and method == "GET":
+            return self._json(rep_provider.catalog())
         if route == "pdf" and method == "POST":
             return self._json(self._pdf(self._body()))
         if route == "cache/clear" and method == "POST":
@@ -327,9 +354,20 @@ class Handler(BaseHTTPRequestHandler):
         app = self.app
         langs = [l for l in (data.get("langs") or []) if l in app.languages.by_code]
         related = bool(data.get("related", True))
+        persons = data.get("persons") or {}  # тема → идентификатор Wikidata человека
 
         def exp(lst, rel):
-            return [app.lexicon.expand(t, langs, related=rel) for t in lst if str(t).strip()][:6]
+            out = []
+            for t in [x for x in lst if str(x).strip()][:6]:
+                qid = persons.get(t) if isinstance(persons, dict) else None
+                if qid:
+                    try:
+                        out.append(person.expansion(person.profile(app.http, str(qid)), langs))
+                        continue
+                    except (FetchError, ValueError, KeyError):
+                        pass
+                out.append(app.lexicon.expand(t, langs, related=rel))
+            return out
         topics = exp(data.get("topics") or [], related)
         context = exp(data.get("context") or [], False)
         exclude = exp(data.get("exclude") or [], False)
@@ -407,25 +445,50 @@ class Handler(BaseHTTPRequestHandler):
         meta["canonical_source"] = s["id"] if s else ""
         return meta
 
+    # ------------------------------------------------------------ перевод статьи
+    def _fetch_readable(self, url: str):
+        app = self.app
+        if not is_http_url(url):
+            raise ValueError("некорректная ссылка")
+        real = gnews.resolve(app.http, url) if gnews.is_gnews(url) else url
+        if not real:
+            return None, url, "не удалось раскрыть ссылку Google News"
+        try:
+            resp = app.http.get(real, ttl=86400, timeout=15, retries=1, max_bytes=4_000_000)
+        except FetchError as e:
+            return None, real, "страница недоступна: %s" % e.short()
+        return htmlmeta.extract_readable(resp.text(), resp.url), resp.url, ""
+
+    def _translate_article(self, url: str) -> dict:
+        data, real, err = self._fetch_readable(url)
+        if not data or not data["blocks"]:
+            return {"ok": False, "error": err or "основной текст извлечь не удалось (платный доступ или защита сайта)",
+                    "url": real}
+        key = self.app.state.settings().get("deepl_key", "")
+        title = data["meta"].get("title") or ""
+        blocks, engine = translate.translate_blocks(self.app.http, data["blocks"], "ru", key)
+        ttl_tr = translate.translate_one(self.app.http, title, "ru", deepl_key=key)[0] if title else ""
+        return {"ok": True, "url": real, "title": title, "title_tr": ttl_tr, "blocks": blocks, "engine": engine,
+                "lang": data["meta"].get("lang") or "", "truncated": len(blocks) < len(data["blocks"])}
+
     # ------------------------------------------------------------ режим чтения
     def _reader(self, qs):
         app = self.app
         url = (qs.get("url") or [""])[0]
         if not is_http_url(url):
             return self._send(400, "Некорректная ссылка".encode(), "text/plain; charset=utf-8")
-        real = gnews.resolve(app.http, url) if gnews.is_gnews(url) else url
-        err, data = "", None
-        if real:
-            try:
-                resp = app.http.get(real, ttl=86400, timeout=15, retries=1, max_bytes=4_000_000)
-                data = htmlmeta.extract_readable(resp.text(), resp.url)
-                real = resp.url
-            except FetchError as e:
-                err = "страница недоступна: %s" % e.short()
-        else:
-            err = "не удалось раскрыть ссылку Google News"
+        data, real, err = self._fetch_readable(url)
+        tr = (qs.get("tr") or [""])[0] == "ru"
+        engine = ""
+        if tr and data and data["blocks"]:
+            key = app.state.settings().get("deepl_key", "")
+            data["blocks"], engine = translate.translate_blocks(app.http, data["blocks"], "ru", key)
+            t0 = data["meta"].get("title") or ""
+            if t0:
+                data["meta"]["title_tr"] = translate.translate_one(app.http, t0, "ru", deepl_key=key)[0]
         body = render_reader(real or url, data, err, {k: (qs.get(k) or [""])[0] for k in
-                                                     ("title", "source", "date", "status", "tier", "authors")})
+                                                     ("title", "source", "date", "status", "tier", "authors")},
+                             translated=engine)
         self._send(200, body.encode("utf-8"), "text/html; charset=utf-8",
                    {"Cache-Control": "no-store",
                     "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline' "
@@ -439,8 +502,10 @@ class Handler(BaseHTTPRequestHandler):
             raise ValueError("некорректная ссылка")
         mode = data.get("mode", "original")
         target = url
-        if mode == "reader":
+        if mode in ("reader", "reader_ru"):
             target = "http://127.0.0.1:%d/reader?t=%s&url=%s" % (app.port, app.token, quote(url, safe=""))
+            if mode == "reader_ru":
+                target += "&tr=ru"
             for k in ("title", "source", "date", "status", "tier", "authors"):
                 if data.get(k):
                     target += "&%s=%s" % (k, quote(str(data[k])[:400], safe=""))
@@ -455,10 +520,12 @@ class Handler(BaseHTTPRequestHandler):
                 "path": os.path.abspath(path)}
 
 
-def render_reader(url: str, data, err: str, hint: dict) -> str:
+def render_reader(url: str, data, err: str, hint: dict, translated: str = "") -> str:
     e = html.escape
     meta = (data or {}).get("meta") or {}
     title = meta.get("title") or hint.get("title") or url
+    if translated and meta.get("title_tr"):
+        title = meta["title_tr"]
     rows = []
 
     def row(k, v):
@@ -475,18 +542,21 @@ def render_reader(url: str, data, err: str, hint: dict) -> str:
     if meta.get("canonical") and meta["canonical"].rstrip("/") != url.rstrip("/"):
         row("Каноническая ссылка", e(meta["canonical"]))
     row("Дата обращения", e(time.strftime("%d.%m.%Y %H:%M")))
+    if translated:
+        row("Перевод", e("машинный перевод на русский (%s); заголовок оригинала: %s" % (translated, meta.get("title") or "")))
     parts = []
     for b in (data or {}).get("blocks", []):
         tag = {"h2": "h2", "h3": "h3", "blockquote": "blockquote", "li": "li"}.get(b["k"], "p")
+        txt = b.get("tr") or b["t"] if translated else b["t"]
         if tag == "li":
-            parts.append("<p class=li>• %s</p>" % e(b["t"]))
+            parts.append("<p class=li>• %s</p>" % e(txt))
         else:
-            parts.append("<%s>%s</%s>" % (tag, e(b["t"]), tag))
+            parts.append("<%s>%s</%s>" % (tag, e(txt), tag))
     text = "\n".join(parts)
     if not text:
         text = '<p class="note">%s</p>' % e(err or "Основной текст извлечь не удалось (платный доступ, "
                                                "динамическая загрузка или защита сайта). Откройте оригинал.")
-    lang = e(meta.get("lang") or "")
+    lang = "ru" if translated else e(meta.get("lang") or "")
     return READER_TEMPLATE.replace("{{TITLE}}", e(title)).replace("{{ROWS}}", "\n".join(rows)) \
         .replace("{{TEXT}}", text).replace("{{URL}}", e(url)).replace("{{LANG}}", lang or "ru")
 

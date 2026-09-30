@@ -1,0 +1,4 @@
+{"search": [
+ {"id": "Q999001", "label": "Шавкат Мирзиёев", "description": "президент Узбекистана", "match": {"type": "label", "language": "ru", "text": "Шавкат Мирзиёев"}},
+ {"id": "Q999009", "label": "Мирзиёев", "description": "фамилия", "match": {"type": "label", "language": "ru", "text": "Мирзиёев"}}
+]}

@@ -13,26 +13,37 @@ from concurrent.futures import ThreadPoolExecutor
 from .health import classify, describe
 from .lexicon import ROLE_LABELS
 from .net import FetchError
-from .providers import extra, feeds, gdelt, gnews
+from .providers import extra, feeds, gdelt, gnews, reports, social
 from .util import TermMatcher, norm_text, now_ts, ts_to_date, utc_iso
 
 log = logging.getLogger("oko.search")
 
+TOPIC, WATCH, REPORTS, SOCIAL = "topic", "watch", "reports", "social"
+MODES = {TOPIC, WATCH, REPORTS, SOCIAL, "person"}
 PROVIDERS = [
-    # id, подпись, функция планирования, параллельность, включён по умолчанию
-    ("gnews", "Google News", gnews.tasks, 4, True),
-    ("gdelt", "GDELT (мировые СМИ, 65 языков)", gdelt.tasks, 1, True),
-    ("rss", "RSS-ленты источников реестра", feeds.rss_tasks, 16, True),
-    ("wp", "Поиск по сайтам источников (WordPress API)", feeds.wp_tasks, 8, True),
-    ("bing", "Bing News", extra.bing_tasks, 2, True),
-    ("openalex", "OpenAlex (научные публикации)", extra.openalex_tasks, 1, True),
-    ("worldbank", "Всемирный банк (документы и доклады)", extra.worldbank_tasks, 1, True),
-    ("govuk", "GOV.UK (официальные публикации)", extra.govuk_tasks, 1, True),
-    ("reliefweb", "ReliefWeb (доклады ООН и НКО)", extra.reliefweb_tasks, 1, False),
+    # id, подпись, функция планирования, параллельность, включён по умолчанию, режимы, группа
+    ("gnews", "Google News", gnews.tasks, 4, True, {TOPIC, WATCH}, "media"),
+    ("gdelt", "GDELT (мировые СМИ, 65 языков)", gdelt.tasks, 1, True, {TOPIC}, "media"),
+    ("rss", "RSS-ленты источников реестра", feeds.rss_tasks, 16, True, {TOPIC, WATCH}, "media"),
+    ("wp", "Поиск по сайтам источников (WordPress API)", feeds.wp_tasks, 8, True, {TOPIC, WATCH}, "media"),
+    ("bing", "Bing News", extra.bing_tasks, 2, True, {TOPIC}, "media"),
+    ("openalex", "OpenAlex (научные публикации)", extra.openalex_tasks, 1, True, {TOPIC}, "media"),
+    ("worldbank", "Всемирный банк (документы и доклады)", extra.worldbank_tasks, 1, True, {TOPIC}, "media"),
+    ("govuk", "GOV.UK (официальные публикации)", extra.govuk_tasks, 1, True, {TOPIC}, "media"),
+    ("reliefweb", "ReliefWeb (доклады ООН и НКО)", extra.reliefweb_tasks, 1, False, {TOPIC}, "media"),
+    ("telegram", "Telegram — публичные каналы", social.telegram_tasks, 4, True, {TOPIC, WATCH, SOCIAL}, "social"),
+    ("vk", "ВКонтакте (нужен ключ API)", social.vk_tasks, 1, True, {TOPIC, SOCIAL}, "social"),
+    ("x", "X / Twitter (нужен ключ API)", social.x_tasks, 1, True, {TOPIC, SOCIAL}, "social"),
+    ("websocial", "LinkedIn, Facebook, Instagram, X, VK, WhatsApp — через поисковик (ключ Brave или Google)",
+     social.websocial_tasks, 2, True, {TOPIC, SOCIAL}, "social"),
+    ("youtube", "YouTube (нужен ключ API)", social.youtube_tasks, 1, True, {TOPIC, SOCIAL}, "social"),
+    ("reports", "Доклады и индексы международных организаций", reports.tasks, 4, True, {REPORTS}, "reports"),
 ]
 PROVIDER_IDS = [p[0] for p in PROVIDERS]
-ENGINE_PROVIDERS = {"gnews", "gdelt", "bing", "openalex", "worldbank", "govuk", "reliefweb"}
-HOST_NAMES = {"news.google.com": "Google News", "api.gdeltproject.org": "GDELT", "www.bing.com": "Bing"}
+ENGINE_PROVIDERS = {"gnews", "gdelt", "bing", "openalex", "worldbank", "govuk", "reliefweb", "vk", "x", "websocial",
+                    "youtube"}
+HOST_NAMES = {"news.google.com": "Google News", "api.gdeltproject.org": "GDELT", "www.bing.com": "Bing",
+              "t.me": "Telegram"}
 HIT_RANK = {"title": 3, "text": 2, "engine": 1}
 MAX_TERMS = 12
 
@@ -102,6 +113,12 @@ class SearchCtx:
         self.settings = app.state.settings()
         self.job = job
         self.cancel = job.cancel
+        self.mode = params.get("mode") if params.get("mode") in MODES else TOPIC
+        self.watch = self.mode == WATCH
+        self.report_topic = bool(params.get("report_topic"))
+        self.report_matcher = None
+        self.watch_sources = {str(x) for x in (params.get("sources") or [])}
+        self.watch_channels = [c for c in (params.get("channels") or []) if isinstance(c, dict)]
         self.lang_codes = [c for c in params.get("langs", []) if c in self.languages.by_code]
         self.plan = sanitize_plan(params.get("plan"), self.lang_codes)
         self.t_from = int(params["t_from"])
@@ -113,6 +130,7 @@ class SearchCtx:
             ctxt += p["ctx"] + p["ctx_m"]
             nott += p["not"]
         self.topic_matcher = TermMatcher(topic)
+        self.has_terms = bool(self.topic_matcher)
         self.ctx_matcher = TermMatcher(ctxt) if ctxt else None
         self.not_matcher = TermMatcher(nott) if nott else None
         self.origins = sanitize_origins(params.get("origins"), self.plan, params.get("topics"),
@@ -144,7 +162,21 @@ class SearchCtx:
         return task.meta["_kws"]
 
     def source_allowed(self, s) -> bool:
+        if self.watch:
+            return s.get("id") in self.watch_sources
         return not self.types or s.get("type") in self.types
+
+    def social_channels(self) -> list:
+        if self.watch:
+            out = []
+            for c in self.watch_channels:
+                if c.get("platform", "telegram") == "telegram":
+                    cid = social.clean_channel(str(c.get("id", "")))
+                    if cid:
+                        out.append({"id": cid, "name": c.get("name") or cid, "lang": c.get("lang") or "ru",
+                                    "source": c.get("source")})
+            return out
+        return social.telegram_channels(self.settings)
 
     def take_budget(self, name: str) -> bool:
         with self._lock:
@@ -199,6 +231,11 @@ class SearchJob:
         self._d_to = ts_to_date(int(params["t_to"]) + self._tz)
         key = "|".join([norm_text(" ".join(params.get("topics") or [])), norm_text(" ".join(params.get("context") or [])),
                         norm_text(" ".join(params.get("exclude") or []))])
+        if params.get("mode") == WATCH:
+            key = "watch|" + ",".join(sorted(str(x) for x in params.get("sources") or [])) + "|" + ",".join(
+                sorted(str(c.get("id")) for c in params.get("channels") or [] if isinstance(c, dict))) + "|" + key
+        elif params.get("mode") == REPORTS:
+            key = "reports|" + key
         self.seen_key = key
         self._seen = app.state.seen_get(key)
 
@@ -209,10 +246,12 @@ class SearchJob:
     # ------------------------------------------------------------ приём материалов
     def add(self, item: dict) -> bool:
         ts = item.get("ts")
-        if not ts:
+        if not ts and item.get("prec") != "range":
             self.stats["no_date"] += 1
             return False
-        if item.get("prec") == "day":
+        if not ts:
+            pass  # дата неизвестна, но поисковик ограничил выдачу периодом
+        elif item.get("prec") == "day":
             d = ts_to_date(ts)
             if d < self._d_from or d > self._d_to:
                 self.stats["out_of_range"] += 1
@@ -347,14 +386,21 @@ class SearchJob:
 
     def _run(self):
         self.ctx = ctx = SearchCtx(self.app, self, self.params)
-        enabled = set(self.params.get("providers") or [p[0] for p in PROVIDERS if p[4]])
-        if not ctx.plan or not any(p["q"] for p in ctx.plan.values()):
+        chosen = self.params.get("providers")
+        enabled = set(chosen) if chosen else {p[0] for p in PROVIDERS if p[4]}
+        if ctx.mode in (WATCH, REPORTS):
+            enabled = {p[0] for p in PROVIDERS if ctx.mode in p[5]}
+        if ctx.mode not in (WATCH, REPORTS) and (not ctx.plan or not any(p["q"] for p in ctx.plan.values())):
             self.emit("error", {"message": "не заданы поисковые термины"})
+            return
+        if ctx.watch and not ctx.watch_sources and not ctx.watch_channels:
+            self.emit("error", {"message": "нет источников для мониторинга — отметьте их в разделе «Источники»"})
             return
         lanes = []
         plan_info = []
-        for pid, label, planner, conc, _default in PROVIDERS:
-            if pid not in enabled:
+        mode = "topic" if ctx.mode == "person" else ctx.mode
+        for pid, label, planner, conc, _default, modes, _grp in PROVIDERS:
+            if pid not in enabled or mode not in modes:
                 continue
             try:
                 ts = planner(ctx)

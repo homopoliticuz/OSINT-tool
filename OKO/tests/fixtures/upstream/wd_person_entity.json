@@ -1,0 +1,20 @@
+{"entities": {
+ "Q999001": {"id": "Q999001",
+  "labels": {"ru": {"value": "Шавкат Мирзиёев"}, "en": {"value": "Shavkat Mirziyoyev"}, "uz": {"value": "Shavkat Mirziyoyev"},
+             "fr": {"value": "Chavkat Mirziyoyev"}, "de": {"value": "Schawkat Mirsijojew"}, "ja": {"value": "シャヴカト・ミルズィヨエフ"},
+             "zh-hans": {"value": "沙夫卡特·米尔济约耶夫"}, "ar": {"value": "شوكت ميرضيائيف"}, "ko": {"value": "샵카트 미르지요예프"}},
+  "aliases": {"ru": [{"value": "Мирзиёев"}, {"value": "Шавкат Миромонович Мирзиёев"}], "en": [{"value": "Mirziyoyev"}, {"value": "Shavkat Miromonovich Mirziyoyev"}]},
+  "descriptions": {"ru": {"value": "президент Узбекистана с 2016 года"}, "en": {"value": "President of Uzbekistan"}},
+  "sitelinks": {"ruwiki": {"title": "Мирзиёев, Шавкат Миромонович"}, "enwiki": {"title": "Shavkat Mirziyoyev"}},
+  "claims": {
+   "P31": [{"mainsnak": {"datavalue": {"value": {"id": "Q5"}}}}],
+   "P569": [{"mainsnak": {"datavalue": {"value": {"time": "+1957-07-24T00:00:00Z", "precision": 11}}}}],
+   "P27": [{"mainsnak": {"datavalue": {"value": {"id": "Q265"}}}}],
+   "P39": [{"mainsnak": {"datavalue": {"value": {"id": "Q999100"}}}, "qualifiers": {"P580": [{"datavalue": {"value": {"time": "+2016-12-14T00:00:00Z", "precision": 11}}}]}},
+           {"mainsnak": {"datavalue": {"value": {"id": "Q999101"}}}, "qualifiers": {"P580": [{"datavalue": {"value": {"time": "+2003-12-12T00:00:00Z", "precision": 11}}}], "P582": [{"datavalue": {"value": {"time": "+2016-12-14T00:00:00Z", "precision": 11}}}]}}],
+   "P856": [{"mainsnak": {"datavalue": {"value": "https://president.uz"}}}],
+   "P2002": [{"mainsnak": {"datavalue": {"value": "president_uz"}}}],
+   "P3789": [{"mainsnak": {"datavalue": {"value": "Press_secretary_uz"}}}]
+  }},
+ "Q999009": {"id": "Q999009", "labels": {"ru": {"value": "Мирзиёев"}}, "claims": {"P31": [{"mainsnak": {"datavalue": {"value": {"id": "Q101352"}}}}]}}
+}}

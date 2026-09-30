@@ -90,6 +90,21 @@
   "content_type": "application/json"
  },
  {
+  "pattern": "wikidata\\.org/w/api\\.php\\?action=wbsearchentities&search=(Mirziyoyev|%D0%9C%D0%B8%D1%80%D0%B7%D0%B8)",
+  "file": "wd_person_search.json",
+  "content_type": "application/json"
+ },
+ {
+  "pattern": "wikidata\\.org/w/api\\.php\\?action=wbgetentities&ids=Q999001(%7CQ999009)?&",
+  "file": "wd_person_entity.json",
+  "content_type": "application/json"
+ },
+ {
+  "pattern": "wikidata\\.org/w/api\\.php\\?action=wbgetentities&ids=Q(265|9991)",
+  "file": "wd_labels.json",
+  "content_type": "application/json"
+ },
+ {
   "pattern": "wikidata\\.org/w/api\\.php\\?action=wbsearchentities",
   "file": "wikidata_search.json",
   "content_type": "application/json"
@@ -130,6 +145,71 @@
   "pattern": "^https://www\\.asahi\\.com/rss/asahi/newsheadlines\\.rdf$",
   "file": "asahi.rdf",
   "content_type": "application/rdf+xml"
+ },
+ {
+  "pattern": "^https://t\\.me/s/kunuzofficial",
+  "file": "tg_kunuz.html",
+  "content_type": "text/html; charset=utf-8"
+ },
+ {
+  "pattern": "^https://t\\.me/s/",
+  "file": "tg_empty.html",
+  "content_type": "text/html; charset=utf-8"
+ },
+ {
+  "pattern": "^https://dns\\.google/resolve\\?name=example-analytics\\.uz&type=MX",
+  "file": "dns_mx.json",
+  "content_type": "application/json"
+ },
+ {
+  "pattern": "^https://dns\\.google/resolve",
+  "body": "{\"Status\": 3}",
+  "content_type": "application/json"
+ },
+ {
+  "pattern": "^https://rdap\\.org/domain/example-analytics\\.uz",
+  "file": "rdap_domain.json",
+  "content_type": "application/rdap+json"
+ },
+ {
+  "pattern": "^https://rdap\\.org/",
+  "status": 404
+ },
+ {
+  "pattern": "^https://gravatar\\.com/",
+  "status": 404
+ },
+ {
+  "pattern": "^https://api\\.github\\.com/users/okoanalyst$",
+  "file": "gh_user.json",
+  "content_type": "application/json"
+ },
+ {
+  "pattern": "^https://api\\.github\\.com/users/",
+  "status": 404
+ },
+ {
+  "pattern": "^https://t\\.me/okoanalyst$",
+  "file": "tg_user.html",
+  "content_type": "text/html; charset=utf-8"
+ },
+ {
+  "pattern": "^https://www\\.reddit\\.com/user/",
+  "status": 404
+ },
+ {
+  "pattern": "^https://www\\.youtube\\.com/@",
+  "status": 404
+ },
+ {
+  "pattern": "^https://web\\.archive\\.org/cdx/",
+  "file": "wayback_cdx.json",
+  "content_type": "application/json"
+ },
+ {
+  "pattern": "^https://example-analytics\\.uz",
+  "file": "page_example_uz.html",
+  "content_type": "text/html; charset=utf-8"
  },
  {
   "pattern": "(/feed/?$|/rss|\\.rss$|\\.xml|\\.rdf$|\\.atom$|format=rss|outboundfeeds)",

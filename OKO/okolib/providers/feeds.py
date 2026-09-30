@@ -22,7 +22,7 @@ def rss_tasks(ctx) -> list:
     for s in ctx.registry.sources:
         if s.get("off") or not ctx.source_allowed(s):
             continue
-        if not any(l in ctx.lang_codes for l in s.get("lang", [])) and s.get("type") not in ("intl_org",):
+        if not ctx.watch and not any(l in ctx.lang_codes for l in s.get("lang", [])) and s.get("type") not in ("intl_org",):
             continue
         feeds = ctx.registry.feeds_for(s)
         if not feeds:
@@ -66,7 +66,7 @@ def _run_rss(ctx, task, source, feeds) -> int:
             if not ts or ts < ctx.t_from or ts > ctx.t_to:
                 continue
             text = " ".join([it.get("summary", ""), " ".join(it.get("categories", []))])
-            hit = ctx.match_item(it["title"], text)
+            hit = ctx.match_item(it["title"], text) if ctx.has_terms else ("watch", "")
             if not hit:
                 continue
             item = make_item(url=it["link"], title=it["title"], ts=ts,
@@ -95,6 +95,11 @@ def wp_tasks(ctx) -> list:
         api = ctx.registry.wp_api_for(s)
         if not api:
             continue
+        if ctx.watch and not ctx.has_terms:
+            out.append(Task("wp", "wp:%s:latest" % s["id"], "%s (последние публикации)" % s["name"],
+                            partial(_run_wp, source=s, api=api, term="", code=(s.get("lang") or ["en"])[0]),
+                            group="watch", meta={"query": "", "terms": [], "source": s["id"]}))
+            continue
         langs = [l for l in s.get("lang", []) if l in ctx.lang_codes][:2]
         for code in langs:
             p = ctx.plan.get(code)
@@ -122,6 +127,8 @@ def _run_wp(ctx, task, source, api, term, code) -> int:
     params = {"search": term, "after": utc_iso(ctx.t_from - 86400), "before": utc_iso(ctx.t_to + 86400),
               "per_page": "25", "orderby": "date", "order": "desc", "_embed": "author",
               "_fields": "id,date_gmt,date,link,title,excerpt,author,_links,_embedded"}
+    if not term:
+        params.pop("search")
     url = _wp_url(api, params)
     ttl = 30 * 60 if now_ts() - ctx.t_to < 86400 else 6 * 3600
     try:
@@ -154,7 +161,7 @@ def _run_wp(ctx, task, source, api, term, code) -> int:
         for a in ((p.get("_embedded") or {}).get("author") or []):
             if isinstance(a, dict) and a.get("name"):
                 authors.append(strip_html(a["name"]))
-        hit = ctx.match_item(title, excerpt)
+        hit = ctx.match_item(title, excerpt) if ctx.has_terms else ("watch", "")
         item = make_item(url=p.get("link", ""), title=title, ts=ts,
                          lang=detect_lang(title, code), prov="wp", via="Поиск по сайту · " + source["name"],
                          src_name=source["name"], src_url="https://" + source["domains"][0], snippet=excerpt,
