@@ -28,6 +28,7 @@ TYPE_LABELS = {
     "ratings": "Рейтинги и индексы",
     "ngo": "НКО / правозащита",
 }
+SOCIAL_LABEL = "Соцсети"
 
 
 class Registry:

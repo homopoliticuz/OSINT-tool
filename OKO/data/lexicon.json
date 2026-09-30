@@ -1580,6 +1580,1174 @@
           "Shanxay hamkorlik tashkiloti"
         ]
       }
+    },
+    {
+      "id": "theme_economy",
+      "kind": "theme",
+      "label": "Экономика",
+      "aliases": [],
+      "terms": {
+        "ru": [
+          "экономика",
+          "ВВП",
+          "инфляция",
+          "экономический рост",
+          "бюджет"
+        ],
+        "en": [
+          "economy",
+          "GDP",
+          "inflation",
+          "economic growth",
+          "budget"
+        ],
+        "fr": [
+          "économie",
+          "PIB",
+          "inflation",
+          "croissance économique"
+        ],
+        "de": [
+          "Wirtschaft",
+          "BIP",
+          "Inflation",
+          "Wirtschaftswachstum"
+        ],
+        "es": [
+          "economía",
+          "PIB",
+          "inflación",
+          "crecimiento económico"
+        ],
+        "it": [
+          "economia",
+          "PIL",
+          "inflazione",
+          "crescita economica"
+        ],
+        "ko": [
+          "경제",
+          "국내총생산",
+          "인플레이션",
+          "경제성장"
+        ],
+        "ja": [
+          "経済",
+          "GDP",
+          "インフレ",
+          "経済成長"
+        ],
+        "zh": [
+          "经济",
+          "国内生产总值",
+          "通货膨胀",
+          "经济增长"
+        ],
+        "zh-Hant": [
+          "經濟",
+          "國內生產總值",
+          "通貨膨脹",
+          "經濟增長"
+        ],
+        "fa": [
+          "اقتصاد",
+          "تورم",
+          "رشد اقتصادی",
+          "تولید ناخالص داخلی"
+        ],
+        "ar": [
+          "اقتصاد",
+          "الناتج المحلي",
+          "التضخم",
+          "النمو الاقتصادي"
+        ],
+        "ur": [
+          "معیشت",
+          "افراط زر",
+          "معاشی ترقی"
+        ],
+        "tr": [
+          "ekonomi",
+          "GSYİH",
+          "enflasyon",
+          "ekonomik büyüme"
+        ],
+        "uz": [
+          "iqtisodiyot",
+          "YaIM",
+          "inflyatsiya",
+          "iqtisodiy o'sish"
+        ]
+      },
+      "match": {
+        "ru": [
+          "экономик",
+          "инфляц",
+          "бюджет"
+        ],
+        "en": [
+          "econom"
+        ],
+        "fr": [
+          "économi"
+        ],
+        "de": [
+          "wirtschaft"
+        ],
+        "uz": [
+          "iqtisod"
+        ]
+      }
+    },
+    {
+      "id": "theme_energy",
+      "kind": "theme",
+      "label": "Энергетика",
+      "aliases": [],
+      "terms": {
+        "ru": [
+          "энергетика",
+          "газ",
+          "нефть",
+          "электроэнергия",
+          "АЭС"
+        ],
+        "en": [
+          "energy",
+          "natural gas",
+          "oil",
+          "electricity",
+          "nuclear power plant"
+        ],
+        "fr": [
+          "énergie",
+          "gaz",
+          "pétrole",
+          "électricité",
+          "centrale nucléaire"
+        ],
+        "de": [
+          "Energie",
+          "Erdgas",
+          "Öl",
+          "Strom",
+          "Atomkraftwerk"
+        ],
+        "es": [
+          "energía",
+          "gas natural",
+          "petróleo",
+          "electricidad"
+        ],
+        "it": [
+          "energia",
+          "gas naturale",
+          "petrolio",
+          "elettricità"
+        ],
+        "ko": [
+          "에너지",
+          "천연가스",
+          "석유",
+          "전력",
+          "원전"
+        ],
+        "ja": [
+          "エネルギー",
+          "天然ガス",
+          "石油",
+          "電力",
+          "原発"
+        ],
+        "zh": [
+          "能源",
+          "天然气",
+          "石油",
+          "电力",
+          "核电"
+        ],
+        "zh-Hant": [
+          "能源",
+          "天然氣",
+          "石油",
+          "電力",
+          "核電"
+        ],
+        "fa": [
+          "انرژی",
+          "گاز",
+          "نفت",
+          "برق"
+        ],
+        "ar": [
+          "الطاقة",
+          "الغاز",
+          "النفط",
+          "الكهرباء"
+        ],
+        "ur": [
+          "توانائی",
+          "گیس",
+          "تیل",
+          "بجلی"
+        ],
+        "tr": [
+          "enerji",
+          "doğalgaz",
+          "petrol",
+          "elektrik",
+          "nükleer santral"
+        ],
+        "uz": [
+          "energetika",
+          "gaz",
+          "neft",
+          "elektr energiyasi",
+          "AES"
+        ]
+      },
+      "match": {
+        "ru": [
+          "энергет",
+          "газов",
+          "нефт",
+          "электроэнерг"
+        ],
+        "en": [
+          "energy"
+        ],
+        "uz": [
+          "energetik"
+        ]
+      }
+    },
+    {
+      "id": "theme_security",
+      "kind": "theme",
+      "label": "Безопасность",
+      "aliases": [],
+      "terms": {
+        "ru": [
+          "безопасность",
+          "терроризм",
+          "армия",
+          "оборона",
+          "военные учения"
+        ],
+        "en": [
+          "security",
+          "terrorism",
+          "military",
+          "defense",
+          "defence"
+        ],
+        "fr": [
+          "sécurité",
+          "terrorisme",
+          "armée",
+          "défense"
+        ],
+        "de": [
+          "Sicherheit",
+          "Terrorismus",
+          "Militär",
+          "Verteidigung"
+        ],
+        "es": [
+          "seguridad",
+          "terrorismo",
+          "ejército",
+          "defensa"
+        ],
+        "it": [
+          "sicurezza",
+          "terrorismo",
+          "esercito",
+          "difesa"
+        ],
+        "ko": [
+          "안보",
+          "테러",
+          "군사",
+          "국방"
+        ],
+        "ja": [
+          "安全保障",
+          "テロ",
+          "軍事",
+          "国防"
+        ],
+        "zh": [
+          "安全",
+          "恐怖主义",
+          "军事",
+          "国防"
+        ],
+        "zh-Hant": [
+          "安全",
+          "恐怖主義",
+          "軍事",
+          "國防"
+        ],
+        "fa": [
+          "امنیت",
+          "تروریسم",
+          "نظامی",
+          "دفاع"
+        ],
+        "ar": [
+          "الأمن",
+          "الإرهاب",
+          "العسكري",
+          "الدفاع"
+        ],
+        "ur": [
+          "سلامتی",
+          "دہشت گردی",
+          "فوج",
+          "دفاع"
+        ],
+        "tr": [
+          "güvenlik",
+          "terörizm",
+          "askeri",
+          "savunma"
+        ],
+        "uz": [
+          "xavfsizlik",
+          "terrorizm",
+          "harbiy",
+          "mudofaa"
+        ]
+      },
+      "match": {
+        "ru": [
+          "безопасност",
+          "террор",
+          "военн",
+          "оборон",
+          "армии"
+        ],
+        "en": [
+          "terror",
+          "militar"
+        ],
+        "uz": [
+          "xavfsizlik"
+        ]
+      }
+    },
+    {
+      "id": "theme_foreign",
+      "kind": "theme",
+      "label": "Внешняя политика",
+      "aliases": [],
+      "terms": {
+        "ru": [
+          "внешняя политика",
+          "визит",
+          "переговоры",
+          "МИД",
+          "дипломатия",
+          "саммит"
+        ],
+        "en": [
+          "foreign policy",
+          "visit",
+          "talks",
+          "foreign minister",
+          "diplomacy",
+          "summit"
+        ],
+        "fr": [
+          "politique étrangère",
+          "visite",
+          "négociations",
+          "diplomatie",
+          "sommet"
+        ],
+        "de": [
+          "Außenpolitik",
+          "Besuch",
+          "Gespräche",
+          "Außenminister",
+          "Diplomatie",
+          "Gipfel"
+        ],
+        "es": [
+          "política exterior",
+          "visita",
+          "conversaciones",
+          "diplomacia",
+          "cumbre"
+        ],
+        "it": [
+          "politica estera",
+          "visita",
+          "colloqui",
+          "diplomazia",
+          "vertice"
+        ],
+        "ko": [
+          "외교",
+          "정상회담",
+          "방문",
+          "외무장관"
+        ],
+        "ja": [
+          "外交",
+          "首脳会談",
+          "訪問",
+          "外相"
+        ],
+        "zh": [
+          "外交",
+          "峰会",
+          "访问",
+          "外长",
+          "会谈"
+        ],
+        "zh-Hant": [
+          "外交",
+          "峰會",
+          "訪問",
+          "外長",
+          "會談"
+        ],
+        "fa": [
+          "سیاست خارجی",
+          "دیپلماسی",
+          "دیدار",
+          "نشست"
+        ],
+        "ar": [
+          "السياسة الخارجية",
+          "زيارة",
+          "محادثات",
+          "الدبلوماسية",
+          "قمة"
+        ],
+        "ur": [
+          "خارجہ پالیسی",
+          "دورہ",
+          "مذاکرات",
+          "سفارت کاری"
+        ],
+        "tr": [
+          "dış politika",
+          "ziyaret",
+          "görüşme",
+          "diplomasi",
+          "zirve"
+        ],
+        "uz": [
+          "tashqi siyosat",
+          "tashrif",
+          "muzokaralar",
+          "diplomatiya",
+          "sammit"
+        ]
+      },
+      "match": {
+        "ru": [
+          "визит",
+          "переговор",
+          "дипломат",
+          "саммит"
+        ],
+        "en": [
+          "diplomat"
+        ],
+        "uz": [
+          "tashrif",
+          "muzokara"
+        ]
+      }
+    },
+    {
+      "id": "theme_trade",
+      "kind": "theme",
+      "label": "Инвестиции и торговля",
+      "aliases": [],
+      "terms": {
+        "ru": [
+          "инвестиции",
+          "торговля",
+          "экспорт",
+          "импорт",
+          "товарооборот"
+        ],
+        "en": [
+          "investment",
+          "trade",
+          "exports",
+          "imports",
+          "trade turnover"
+        ],
+        "fr": [
+          "investissements",
+          "commerce",
+          "exportations",
+          "importations"
+        ],
+        "de": [
+          "Investitionen",
+          "Handel",
+          "Exporte",
+          "Importe"
+        ],
+        "es": [
+          "inversiones",
+          "comercio",
+          "exportaciones",
+          "importaciones"
+        ],
+        "it": [
+          "investimenti",
+          "commercio",
+          "esportazioni",
+          "importazioni"
+        ],
+        "ko": [
+          "투자",
+          "무역",
+          "수출",
+          "수입"
+        ],
+        "ja": [
+          "投資",
+          "貿易",
+          "輸出",
+          "輸入"
+        ],
+        "zh": [
+          "投资",
+          "贸易",
+          "出口",
+          "进口"
+        ],
+        "zh-Hant": [
+          "投資",
+          "貿易",
+          "出口",
+          "進口"
+        ],
+        "fa": [
+          "سرمایه گذاری",
+          "تجارت",
+          "صادرات",
+          "واردات"
+        ],
+        "ar": [
+          "الاستثمار",
+          "التجارة",
+          "الصادرات",
+          "الواردات"
+        ],
+        "ur": [
+          "سرمایہ کاری",
+          "تجارت",
+          "برآمدات",
+          "درآمدات"
+        ],
+        "tr": [
+          "yatırım",
+          "ticaret",
+          "ihracat",
+          "ithalat"
+        ],
+        "uz": [
+          "investitsiya",
+          "savdo",
+          "eksport",
+          "import"
+        ]
+      },
+      "match": {
+        "ru": [
+          "инвестиц",
+          "торгов",
+          "экспорт",
+          "импорт"
+        ],
+        "en": [
+          "invest",
+          "export",
+          "import"
+        ],
+        "uz": [
+          "investitsiya",
+          "eksport"
+        ]
+      }
+    },
+    {
+      "id": "theme_rights",
+      "kind": "theme",
+      "label": "Права человека",
+      "aliases": [],
+      "terms": {
+        "ru": [
+          "права человека",
+          "свобода слова",
+          "правозащитники",
+          "пытки",
+          "свобода СМИ"
+        ],
+        "en": [
+          "human rights",
+          "freedom of speech",
+          "press freedom",
+          "torture",
+          "political prisoners"
+        ],
+        "fr": [
+          "droits de l'homme",
+          "liberté de la presse",
+          "torture",
+          "prisonniers politiques"
+        ],
+        "de": [
+          "Menschenrechte",
+          "Pressefreiheit",
+          "Folter",
+          "politische Gefangene"
+        ],
+        "es": [
+          "derechos humanos",
+          "libertad de prensa",
+          "tortura",
+          "presos políticos"
+        ],
+        "it": [
+          "diritti umani",
+          "libertà di stampa",
+          "tortura",
+          "prigionieri politici"
+        ],
+        "ko": [
+          "인권",
+          "언론 자유",
+          "고문"
+        ],
+        "ja": [
+          "人権",
+          "報道の自由",
+          "拷問"
+        ],
+        "zh": [
+          "人权",
+          "新闻自由",
+          "酷刑"
+        ],
+        "zh-Hant": [
+          "人權",
+          "新聞自由",
+          "酷刑"
+        ],
+        "fa": [
+          "حقوق بشر",
+          "آزادی بیان",
+          "شکنجه"
+        ],
+        "ar": [
+          "حقوق الإنسان",
+          "حرية الصحافة",
+          "التعذيب"
+        ],
+        "ur": [
+          "انسانی حقوق",
+          "آزادی صحافت",
+          "تشدد"
+        ],
+        "tr": [
+          "insan hakları",
+          "basın özgürlüğü",
+          "işkence"
+        ],
+        "uz": [
+          "inson huquqlari",
+          "so'z erkinligi",
+          "qiynoq"
+        ]
+      },
+      "match": {
+        "ru": [
+          "правозащит",
+          "пыток",
+          "политзаключ"
+        ],
+        "en": [
+          "rights"
+        ]
+      }
+    },
+    {
+      "id": "theme_water",
+      "kind": "theme",
+      "label": "Вода и климат",
+      "aliases": [],
+      "terms": {
+        "ru": [
+          "водные ресурсы",
+          "Аральское море",
+          "засуха",
+          "изменение климата",
+          "ирригация"
+        ],
+        "en": [
+          "water resources",
+          "Aral Sea",
+          "drought",
+          "climate change",
+          "irrigation"
+        ],
+        "fr": [
+          "ressources en eau",
+          "mer d'Aral",
+          "sécheresse",
+          "changement climatique"
+        ],
+        "de": [
+          "Wasserressourcen",
+          "Aralsee",
+          "Dürre",
+          "Klimawandel"
+        ],
+        "es": [
+          "recursos hídricos",
+          "mar de Aral",
+          "sequía",
+          "cambio climático"
+        ],
+        "it": [
+          "risorse idriche",
+          "lago d'Aral",
+          "siccità",
+          "cambiamento climatico"
+        ],
+        "ko": [
+          "수자원",
+          "아랄해",
+          "가뭄",
+          "기후변화"
+        ],
+        "ja": [
+          "水資源",
+          "アラル海",
+          "干ばつ",
+          "気候変動"
+        ],
+        "zh": [
+          "水资源",
+          "咸海",
+          "干旱",
+          "气候变化"
+        ],
+        "zh-Hant": [
+          "水資源",
+          "鹹海",
+          "乾旱",
+          "氣候變化"
+        ],
+        "fa": [
+          "منابع آب",
+          "دریاچه آرال",
+          "خشکسالی",
+          "تغییرات اقلیمی"
+        ],
+        "ar": [
+          "الموارد المائية",
+          "بحر آرال",
+          "الجفاف",
+          "تغير المناخ"
+        ],
+        "ur": [
+          "آبی وسائل",
+          "خشک سالی",
+          "موسمیاتی تبدیلی"
+        ],
+        "tr": [
+          "su kaynakları",
+          "Aral Gölü",
+          "kuraklık",
+          "iklim değişikliği"
+        ],
+        "uz": [
+          "suv resurslari",
+          "Orol dengizi",
+          "qurg'oqchilik",
+          "iqlim o'zgarishi"
+        ]
+      },
+      "match": {
+        "ru": [
+          "водн",
+          "засух",
+          "климат",
+          "арал"
+        ],
+        "en": [
+          "water",
+          "climate"
+        ],
+        "uz": [
+          "suv",
+          "iqlim"
+        ]
+      }
+    },
+    {
+      "id": "theme_migration",
+      "kind": "theme",
+      "label": "Миграция",
+      "aliases": [],
+      "terms": {
+        "ru": [
+          "мигранты",
+          "трудовая миграция",
+          "денежные переводы",
+          "депортация"
+        ],
+        "en": [
+          "migrants",
+          "labor migration",
+          "labour migrants",
+          "remittances",
+          "deportation"
+        ],
+        "fr": [
+          "migrants",
+          "migration de travail",
+          "transferts de fonds",
+          "expulsion"
+        ],
+        "de": [
+          "Migranten",
+          "Arbeitsmigration",
+          "Rücküberweisungen",
+          "Abschiebung"
+        ],
+        "es": [
+          "migrantes",
+          "migración laboral",
+          "remesas",
+          "deportación"
+        ],
+        "it": [
+          "migranti",
+          "migrazione per lavoro",
+          "rimesse",
+          "espulsione"
+        ],
+        "ko": [
+          "이주노동자",
+          "이민",
+          "송금"
+        ],
+        "ja": [
+          "移民",
+          "出稼ぎ",
+          "送金",
+          "技能実習"
+        ],
+        "zh": [
+          "移民",
+          "劳务移民",
+          "汇款"
+        ],
+        "zh-Hant": [
+          "移民",
+          "勞務移民",
+          "匯款"
+        ],
+        "fa": [
+          "مهاجران",
+          "مهاجرت کاری",
+          "حواله"
+        ],
+        "ar": [
+          "المهاجرين",
+          "الهجرة",
+          "التحويلات المالية"
+        ],
+        "ur": [
+          "تارکین وطن",
+          "ہجرت",
+          "ترسیلات زر"
+        ],
+        "tr": [
+          "göçmen",
+          "işçi göçü",
+          "para transferleri"
+        ],
+        "uz": [
+          "migrantlar",
+          "mehnat migratsiyasi",
+          "pul o'tkazmalari"
+        ]
+      },
+      "match": {
+        "ru": [
+          "мигрант",
+          "миграц",
+          "депортац"
+        ],
+        "en": [
+          "migra",
+          "remittance"
+        ],
+        "uz": [
+          "migrant",
+          "migratsiya"
+        ]
+      }
+    },
+    {
+      "id": "theme_reforms",
+      "kind": "theme",
+      "label": "Выборы и реформы",
+      "aliases": [],
+      "terms": {
+        "ru": [
+          "выборы",
+          "реформы",
+          "конституция",
+          "референдум",
+          "парламент"
+        ],
+        "en": [
+          "election",
+          "elections",
+          "reforms",
+          "constitution",
+          "referendum",
+          "parliament"
+        ],
+        "fr": [
+          "élections",
+          "réformes",
+          "constitution",
+          "référendum",
+          "parlement"
+        ],
+        "de": [
+          "Wahlen",
+          "Reformen",
+          "Verfassung",
+          "Referendum",
+          "Parlament"
+        ],
+        "es": [
+          "elecciones",
+          "reformas",
+          "constitución",
+          "referéndum",
+          "parlamento"
+        ],
+        "it": [
+          "elezioni",
+          "riforme",
+          "costituzione",
+          "referendum",
+          "parlamento"
+        ],
+        "ko": [
+          "선거",
+          "개혁",
+          "헌법",
+          "국민투표"
+        ],
+        "ja": [
+          "選挙",
+          "改革",
+          "憲法",
+          "国民投票"
+        ],
+        "zh": [
+          "选举",
+          "改革",
+          "宪法",
+          "全民公投"
+        ],
+        "zh-Hant": [
+          "選舉",
+          "改革",
+          "憲法",
+          "全民公投"
+        ],
+        "fa": [
+          "انتخابات",
+          "اصلاحات",
+          "قانون اساسی",
+          "همه پرسی"
+        ],
+        "ar": [
+          "الانتخابات",
+          "الإصلاحات",
+          "الدستور",
+          "الاستفتاء"
+        ],
+        "ur": [
+          "انتخابات",
+          "اصلاحات",
+          "آئین",
+          "ریفرنڈم"
+        ],
+        "tr": [
+          "seçim",
+          "reformlar",
+          "anayasa",
+          "referandum"
+        ],
+        "uz": [
+          "saylov",
+          "islohotlar",
+          "konstitutsiya",
+          "referendum"
+        ]
+      },
+      "match": {
+        "ru": [
+          "выборов",
+          "выборах",
+          "реформ",
+          "конституц",
+          "референдум",
+          "парламент"
+        ],
+        "en": [
+          "elector",
+          "reform",
+          "constitution"
+        ],
+        "uz": [
+          "saylov",
+          "islohot"
+        ]
+      }
+    },
+    {
+      "id": "theme_transport",
+      "kind": "theme",
+      "label": "Транспорт и логистика",
+      "aliases": [],
+      "terms": {
+        "ru": [
+          "транспорт",
+          "железная дорога",
+          "транспортный коридор",
+          "логистика",
+          "транзит"
+        ],
+        "en": [
+          "transport",
+          "railway",
+          "transport corridor",
+          "logistics",
+          "transit"
+        ],
+        "fr": [
+          "transport",
+          "chemin de fer",
+          "corridor",
+          "logistique",
+          "transit"
+        ],
+        "de": [
+          "Verkehr",
+          "Eisenbahn",
+          "Transportkorridor",
+          "Logistik",
+          "Transit"
+        ],
+        "es": [
+          "transporte",
+          "ferrocarril",
+          "corredor",
+          "logística",
+          "tránsito"
+        ],
+        "it": [
+          "trasporti",
+          "ferrovia",
+          "corridoio",
+          "logistica",
+          "transito"
+        ],
+        "ko": [
+          "교통",
+          "철도",
+          "운송회랑",
+          "물류"
+        ],
+        "ja": [
+          "交通",
+          "鉄道",
+          "輸送回廊",
+          "物流"
+        ],
+        "zh": [
+          "交通",
+          "铁路",
+          "运输走廊",
+          "物流"
+        ],
+        "zh-Hant": [
+          "交通",
+          "鐵路",
+          "運輸走廊",
+          "物流"
+        ],
+        "fa": [
+          "حمل و نقل",
+          "راه آهن",
+          "کریدور",
+          "ترانزیت"
+        ],
+        "ar": [
+          "النقل",
+          "السكك الحديدية",
+          "ممر",
+          "الخدمات اللوجستية"
+        ],
+        "ur": [
+          "ٹرانسپورٹ",
+          "ریلوے",
+          "راہداری",
+          "ٹرانزٹ"
+        ],
+        "tr": [
+          "ulaştırma",
+          "demiryolu",
+          "koridor",
+          "lojistik",
+          "transit"
+        ],
+        "uz": [
+          "transport",
+          "temir yo'l",
+          "transport yo'lagi",
+          "logistika",
+          "tranzit"
+        ]
+      },
+      "match": {
+        "ru": [
+          "транспорт",
+          "железнодорож",
+          "логистик",
+          "транзит"
+        ],
+        "en": [
+          "rail",
+          "logistic"
+        ],
+        "uz": [
+          "temir yo'l",
+          "logistik"
+        ]
+      }
     }
   ]
 }

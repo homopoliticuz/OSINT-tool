@@ -170,12 +170,17 @@ def expansion(prof: dict, langs) -> dict:
     want = list(langs) + (["zh-Hant"] if "zh" in langs else [])
     for code in want:
         vals = prof["names"].get(code) or (prof["names"].get("zh") if code == "zh-Hant" else None)
-        if vals:
-            out["langs"][code] = {"q": vals, "m": [], "src": "wikidata", "note": "Wikidata " + prof["id"]}
-        else:
-            base = prof["names"].get("en") or [prof["label"]]
-            out["langs"][code] = {"q": base[:1], "m": [], "src": "original",
-                                  "note": "нет написания на этом языке в Wikidata — используется английское"}
+        note = "Wikidata " + prof["id"]
+        if not vals:
+            vals = (prof["names"].get("en") or [prof["label"]])[:1]
+            note = "нет написания на этом языке в Wikidata — используется английское"
+        # в заголовках чаще пишут только фамилию: ищем полным именем, а в тексте узнаём и по фамилии
+        surnames = []
+        for v in vals:
+            parts = [x for x in re.split(r"[\s·・]+", v) if x]
+            if len(parts) >= 2 and len(parts[-1]) >= 4 and parts[-1] not in surnames:
+                surnames.append(parts[-1])
+        out["langs"][code] = {"q": vals, "m": surnames[:2], "src": "wikidata", "note": note}
     return out
 
 

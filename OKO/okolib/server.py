@@ -20,9 +20,9 @@ import traceback
 from http.server import BaseHTTPRequestHandler
 from urllib.parse import parse_qs, quote, unquote, urlsplit
 
-from . import VERSION, htmlmeta, osint, pdfprint, person, relevance, translate, webdata
+from . import VERSION, htmlmeta, osint, pdfprint, person, query, relevance, tgbot, translate, webdata
 from .health import Health
-from .lexicon import Languages, Lexicon, build_plan, plan_origins
+from .lexicon import Languages, Lexicon
 from .net import FetchError, HttpClient
 from .providers import gnews, reports as rep_provider, social
 from .registry import TYPE_LABELS, Registry
@@ -56,6 +56,9 @@ class App:
                                  os.path.join(self.state_dir, "sources_user.json"),
                                  os.path.join(self.data, "cache", "discovery.json"), self.http)
         self.health = Health(os.path.join(self.state_dir, "health.json"))
+        self.bot = tgbot.TgBot(self)
+        self.lan = False
+        self.lan_urls: list[str] = []
         self.jobs: dict[str, SearchJob] = {}
         self.jobs_lock = threading.Lock()
         self.fixtures = bool(fixtures)
@@ -70,6 +73,7 @@ class App:
             if self.state.settings().get("auto_discovery", True):
                 self.registry.run_discovery(only_stale=True, workers=10)
         threading.Thread(target=worker, name="oko-discovery", daemon=True).start()
+        self.bot.start()
 
     def bootstrap(self) -> dict:
         return {
@@ -79,7 +83,8 @@ class App:
                           for p in PROVIDERS],
             "settings": public_settings(self.state.settings()),
             "types": TYPE_LABELS,
-            "entities": [{"id": e["id"], "label": e["label"]} for e in self.lexicon.entities],
+            "entities": [{"id": e["id"], "label": e["label"]} for e in self.lexicon.entities if e.get("kind") != "theme"],
+            "themes": self.lexicon.themes(),
             "sources": len(self.registry.sources),
             "discovery": self.registry.progress,
             "pdf_browser": bool(pdfprint.find_browser()),
@@ -203,6 +208,8 @@ class Handler(BaseHTTPRequestHandler):
         if not p.startswith(base + os.sep) or not os.path.isfile(p):
             return self._err(404, "не найдено")
         ctype = mimetypes.guess_type(p)[0] or "application/octet-stream"
+        if p.endswith(".webmanifest"):
+            ctype = "application/manifest+json"
         if ctype.startswith("text/") or ctype in ("application/javascript", "image/svg+xml"):
             ctype += "; charset=utf-8"
         if p.endswith(".js"):
@@ -340,6 +347,10 @@ class Handler(BaseHTTPRequestHandler):
                                "links": social.search_links(q) if q else []})
         if route == "catalog/reports" and method == "GET":
             return self._json(rep_provider.catalog())
+        if route == "bot/status":
+            return self._json(dict(app.bot.status(), lan=", ".join(app.lan_urls) if app.lan else ""))
+        if route == "bot/restart" and method == "POST":
+            return self._json({"ok": app.bot.restart(), **app.bot.status()})
         if route == "pdf" and method == "POST":
             return self._json(self._pdf(self._body()))
         if route == "cache/clear" and method == "POST":
@@ -351,29 +362,7 @@ class Handler(BaseHTTPRequestHandler):
 
     # ------------------------------------------------------------ расширение запроса
     def _expand(self, data: dict) -> dict:
-        app = self.app
-        langs = [l for l in (data.get("langs") or []) if l in app.languages.by_code]
-        related = bool(data.get("related", True))
-        persons = data.get("persons") or {}  # тема → идентификатор Wikidata человека
-
-        def exp(lst, rel):
-            out = []
-            for t in [x for x in lst if str(x).strip()][:6]:
-                qid = persons.get(t) if isinstance(persons, dict) else None
-                if qid:
-                    try:
-                        out.append(person.expansion(person.profile(app.http, str(qid)), langs))
-                        continue
-                    except (FetchError, ValueError, KeyError):
-                        pass
-                out.append(app.lexicon.expand(t, langs, related=rel))
-            return out
-        topics = exp(data.get("topics") or [], related)
-        context = exp(data.get("context") or [], False)
-        exclude = exp(data.get("exclude") or [], False)
-        plan = build_plan(topics, context, exclude, langs)
-        return {"topics": topics, "context": context, "exclude": exclude, "plan": plan,
-                "origins": plan_origins(topics, context)}
+        return query.expand_query(self.app, data)
 
     # ------------------------------------------------------------ поиск (поток событий)
     def _search(self, params: dict):

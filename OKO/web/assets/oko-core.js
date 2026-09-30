@@ -95,7 +95,7 @@
     think_tank: 'Аналитический центр', intl_org: 'Международная организация', official: 'Официальный источник',
     agency: 'Информационное агентство', media_global: 'Издание мирового уровня', media_national: 'Национальное издание',
     media_analytic: 'Аналитическое издание', media_regional: 'СМИ Центральной Азии', academic: 'Научное / академическое',
-    ratings: 'Рейтинги и индексы', ngo: 'НКО / правозащита', unknown: 'Не классифицирован'
+    ratings: 'Рейтинги и индексы', ngo: 'НКО / правозащита', social: 'Соцсети', unknown: 'Не классифицирован'
   };
   const ANALYTIC = new Set(['think_tank', 'intl_org', 'official', 'media_analytic', 'academic', 'ratings', 'ngo']);
   const PRIMARY_TYPES = new Set(['think_tank', 'intl_org', 'official', 'academic', 'ratings', 'ngo']);
@@ -390,6 +390,7 @@
     let tier = s ? (s.tier || 3) : 4;
     let type = s ? s.type : 'unknown';
     if (item.kind === 'paper' && !src) { type = 'academic'; tier = academicTier(item); }
+    if (item.kind === 'social') type = 'social';
     item.tier = tier;
     item.type = type;
     item.inRegistry = !!src;
@@ -407,6 +408,16 @@
   }
 
   function origin(item, src, s, reg) {
+    if (item.kind === 'social') {
+      const fwd = item.extra && item.extra.fwd;
+      if (fwd && (fwd.name || fwd.url)) {
+        return { status: 'reprint', confidence: 'high', checked: false,
+          reason: 'Пересланная публикация (репост) — первоисточник указан платформой',
+          credited: { label: fwd.name || fwd.url, url: fwd.url || '' } };
+      }
+      return { status: 'primary', confidence: 'low', checked: false,
+        reason: 'Собственная публикация канала/аккаунта. Если это пересказ новости издания — первоисточник ищите по ссылке в тексте.', credited: null };
+    }
     const m = item.meta && item.meta.ok ? item.meta : null;
     const selfDomain = item.domain;
     // 1. признаки со страницы (глубокая проверка)

@@ -41,10 +41,14 @@ class Lexicon:
         self._index = {}
         for e in self.entities:
             keys = [e["label"]] + e.get("aliases", [])
-            for terms in e.get("terms", {}).values():
-                keys.extend(terms)
+            if e.get("kind") != "theme":  # тему находим только по названию: «газ» — не вся «Энергетика»
+                for terms in e.get("terms", {}).values():
+                    keys.extend(terms)
             for k in keys:
                 self._index.setdefault(norm_text(k), e["id"])
+
+    def themes(self) -> list:
+        return [{"id": e["id"], "label": e["label"]} for e in self.entities if e.get("kind") == "theme"]
         self._lock = threading.Lock()
 
     # ------------------------------------------------------------ поиск сущности

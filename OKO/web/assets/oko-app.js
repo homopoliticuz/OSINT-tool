@@ -46,7 +46,8 @@
     translate: 'M1.8 3.4h7.4M5.5 2v1.4c0 2.9-1.6 5-3.7 6.1M3.7 6.5c1 2.1 2.9 3.6 5 4.2M8.8 14.5l3-7.3 3 7.3M9.9 12.1h3.8',
     reader: 'M2.5 3.5h11M2.5 6.5h11M2.5 9.5h7.5M2.5 12.5h9.5', shield: 'M8 1.6l5.4 2v4c0 3.5-2.4 5.9-5.4 7-3-1.1-5.4-3.5-5.4-7v-4zM5.6 8.1l1.8 1.8 3.1-3.4',
     star: 'M8 1.9l1.85 3.85 4.2.55-3.07 2.94.77 4.16L8 11.4l-3.75 2 .77-4.16L1.95 6.3l4.2-.55z', search: 'M7 12.2A5.2 5.2 0 107 1.8a5.2 5.2 0 000 10.4zM10.8 10.8l3.6 3.6',
-    save: 'M2.5 2.5h9l2 2v9h-11zM5 2.5v3.5h5V2.5M5 13.5V9.5h6v4', quote: 'M3 4h4v4H4.5L3 11V4zM9 4h4v4h-2.5L9 11V4z'
+    save: 'M2.5 2.5h9l2 2v9h-11zM5 2.5v3.5h5V2.5M5 13.5V9.5h6v4', quote: 'M3 4h4v4H4.5L3 11V4zM9 4h4v4h-2.5L9 11V4z',
+    eye: 'M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8zM8 10a2 2 0 100-4 2 2 0 000 4z'
   };
   function icon(name, filled) {
     const s = document.createElementNS(SVG_NS, 'svg');
@@ -175,11 +176,14 @@
     mode: 'registry', minTier: 4, types: new Set(), providers: new Set(), preset: '7d', range: null,
     expansion: null, expKey: '', items: new Map(), meta: new Map(), jobId: null, running: false, abort: null,
     tasks: new Map(), stats: {}, notes: [], planInfo: [], started: 0, done: null,
-    filters: { tier: new Set(), origin: new Set(), kw: new Set(), rel: new Set(), type: new Set(), country: new Set(), lang: new Set(), src: new Set(), access: new Set(), flag: new Set() },
+    filters: { tier: new Set(), origin: new Set(), kw: new Set(), rel: new Set(), type: new Set(), country: new Set(), lang: new Set(), src: new Set(), access: new Set(), flag: new Set(), platform: new Set() },
     strict: true, looseHidden: [],
     text: '', sort: 'authority', view: 'list', selected: null, shown: 150, openStories: new Set(),
     dossier: new Map(), history: [], settings: {}, snapshot: null, stopTerms: [],
-    deep: { queue: [], active: 0, total: 0, done: 0 }, density: 'full', facetMore: new Set()
+    deep: { queue: [], active: 0, total: 0, done: 0 }, density: 'compact', facetMore: new Set(),
+    qtab: 'topic', qvals: {}, themes: new Set(), section: 'media', person: null, personCands: [], osint: null,
+    wsName: 'main', wsStore: {}, watch: { sources: [], channels: [] }, trTitles: false, tr: new Map(), trFull: new Map(),
+    catalog: null, social: null, openRows: new Set(), facetOpen: new Set(['tier', 'origin', 'kw', 'rel', 'platform'])
   };
 
   // ================================================================ период
@@ -198,11 +202,19 @@
     }
   }
   function setPreset(p) {
+    if (p === 'custom') {
+      S.preset = 'custom';
+      $('#customDates').classList.remove('hidden');
+      $$('#presets button').forEach((x) => x.classList.toggle('on', x.dataset.p === 'custom'));
+      customRange();
+      return;
+    }
     S.preset = p;
     const [a, b] = presetRange(p);
     S.range = [a, b];
     $('#dFrom').value = isoDate(a);
     $('#dTo').value = isoDate(b);
+    $('#customDates').classList.add('hidden');
     $$('#presets button').forEach((x) => x.classList.toggle('on', x.dataset.p === p));
     periodHint();
     store.set('preset', p);
@@ -215,13 +227,13 @@
     if (b > new Date()) b = new Date();
     S.preset = 'custom';
     S.range = [a, b];
-    $$('#presets button').forEach((x) => x.classList.remove('on'));
+    $$('#presets button').forEach((x) => x.classList.toggle('on', x.dataset.p === 'custom'));
     periodHint();
   }
   function periodHint() {
     const [a, b] = S.range;
     const days = Math.max(1, Math.round((b - a) / 86400000));
-    $('#periodHint').textContent = fmtDate(a / 1000) + ' — ' + fmtDate(b / 1000) + ' (' + tzLabel() + ', ' + days + ' дн.)';
+    $('#periodHint').textContent = fmtDate(a / 1000).slice(0, 10) + ' — ' + fmtDate(b / 1000) + ' · ' + tzLabel() + ' · ' + days + ' дн.';
   }
 
   // ================================================================ языки и категории
@@ -234,7 +246,7 @@
       chip.addEventListener('click', () => {
         if (S.langOn.has(l.code)) S.langOn.delete(l.code); else S.langOn.add(l.code);
         store.set('langs', [...S.langOn]);
-        renderLangChips();
+        renderLangChips(); paramsSummary();
       });
       box.appendChild(chip);
     }
@@ -249,13 +261,14 @@
     const m = clear($('#menuTypes'));
     m.appendChild(el('div', { class: 'mh' }, 'Опрашивать категории источников'));
     for (const [k, v] of Object.entries(C.TYPE_LABELS)) {
-      if (k === 'unknown') continue;
+      if (k === 'unknown' || k === 'social') continue;
       const cb = el('input', { type: 'checkbox' });
       cb.checked = !S.types.size || S.types.has(k);
       cb.addEventListener('change', () => {
-        if (!S.types.size) Object.keys(C.TYPE_LABELS).forEach((t) => t !== 'unknown' && S.types.add(t));
+        const all = Object.keys(C.TYPE_LABELS).filter((t) => t !== 'unknown' && t !== 'social');
+        if (!S.types.size) all.forEach((t) => S.types.add(t));
         if (cb.checked) S.types.add(k); else S.types.delete(k);
-        if (S.types.size === Object.keys(C.TYPE_LABELS).length - 1) S.types.clear();
+        if (S.types.size === all.length) S.types.clear();
         store.set('types', [...S.types]);
         updateTypesBtn();
       });
@@ -266,23 +279,30 @@
   }
   function updateTypesBtn() {
     $('#btnTypes').textContent = 'Категории: ' + (S.types.size ? S.types.size + ' из 11' : 'все') + ' ▾';
+    if ($('#btnParams')) paramsSummary();
   }
   function renderProvMenu() {
     const m = clear($('#menuProv'));
-    m.appendChild(el('div', { class: 'mh' }, 'Каналы сбора информации'));
     const provs = (S.boot && S.boot.providers) || [];
-    for (const p of provs) {
-      const cb = el('input', { type: 'checkbox' });
-      cb.checked = S.providers.has(p.id);
-      cb.addEventListener('change', () => {
-        if (cb.checked) S.providers.add(p.id); else S.providers.delete(p.id);
-        store.set('providers', [...S.providers]);
-      });
-      m.appendChild(el('label', null, cb, p.label));
+    const keys = (S.social && S.social.keys) || {};
+    const need = { vk: !keys.vk, x: !keys.x, websocial: !(keys.brave || keys.gcse), youtube: !keys.youtube };
+    for (const [g, gl] of [['media', 'СМИ, аналитика, организации'], ['social', 'Соцсети — отдельная выдача']]) {
+      const list = provs.filter((p) => (p.group || 'media') === g);
+      if (!list.length) continue;
+      m.appendChild(el('div', { class: 'mh' }, gl));
+      for (const p of list) {
+        const cb = el('input', { type: 'checkbox' });
+        cb.checked = S.providers.has(p.id);
+        cb.addEventListener('change', () => {
+          if (cb.checked) S.providers.add(p.id); else S.providers.delete(p.id);
+          store.set('providers', [...S.providers]);
+        });
+        m.appendChild(el('label', null, cb, p.label, need[p.id] ? el('span', { class: 'muted', style: 'font-size:11px' }, ' — ключ не задан') : null));
+      }
     }
     if (!provs.length) m.appendChild(el('div', { class: 'muted', style: 'padding:6px 8px' }, 'Автономный режим: GDELT и OpenAlex'));
+    else m.appendChild(el('div', { class: 'muted', style: 'font-size:11.5px;padding:4px 8px' }, 'Ключи соцсетей — в «Настройки → Соцсети и ключи API».'));
   }
-
   function toggleMenu(btn, menu) {
     const open = menu.classList.contains('hidden');
     $$('.menu').forEach((x) => x.classList.add('hidden'));
@@ -293,17 +313,32 @@
   });
 
   // ================================================================ расширение запроса и термины
+  function themeLabels() {
+    const all = (S.boot && S.boot.themes) || (D.lexicon || []).filter((e) => e.kind === 'theme').map((e) => ({ id: e.id, label: e.label }));
+    return all.filter((t) => S.themes.has(t.id)).map((t) => t.label);
+  }
   function queryParts() {
-    return { topics: splitList($('#qTopic').value), context: splitList($('#qCtx').value), exclude: splitList($('#qNot').value) };
+    const v = $('#qTopic').value;
+    if (S.qtab === 'keywords') {
+      const exact = $('#optExact').checked;
+      return { topics: exact ? [v.trim()].filter(Boolean) : splitList(v), context: splitList($('#qCtx').value), exclude: splitList($('#qNot').value),
+        related: false, translate: $('#optTranslate').checked };
+    }
+    if (S.qtab === 'person') {
+      const p = S.person;
+      return { topics: p ? [p.label] : splitList(v).slice(0, 1), context: [], exclude: [], related: false, persons: p ? { [p.label]: p.id } : {} };
+    }
+    if (S.qtab === 'reports') return { topics: splitList(v), context: [], exclude: [], related: false };
+    return { topics: splitList(v), context: themeLabels(), exclude: [], related: $('#optRelated').checked };
   }
   async function expand(force) {
     const q = queryParts();
     const langs = [...S.langOn];
-    const related = $('#optRelated').checked;
-    const key = JSON.stringify([q, langs.slice().sort(), related]);
+    const related = q.related;
+    const key = JSON.stringify([q, langs.slice().sort()]);
     if (!force && S.expansion && S.expKey === key) return S.expansion;
     let exp;
-    if (SERVER) exp = await api('/api/expand', { method: 'POST', body: Object.assign({ langs, related }, q) });
+    if (SERVER) exp = await api('/api/expand', { method: 'POST', body: Object.assign({ langs }, q) });
     else exp = localExpand(q, langs, related);
     S.expansion = exp;
     S.expKey = key;
@@ -315,8 +350,8 @@
     const byNorm = new Map();
     for (const e of D.lexicon || []) {
       const keys = [e.label].concat(e.aliases || []);
-      Object.values(e.terms || {}).forEach((t) => keys.push(...t));
-      keys.forEach((k) => byNorm.set(C.normText(k), e));
+      if (e.kind !== 'theme') Object.values(e.terms || {}).forEach((t) => keys.push(...t));
+      keys.forEach((k) => { if (!byNorm.has(C.normText(k))) byNorm.set(C.normText(k), e); });
     }
     const byId = new Map((D.lexicon || []).map((e) => [e.id, e]));
     const one = (t, rel) => {
@@ -417,51 +452,80 @@
   }
 
   // ================================================================ поиск
+  // ================================================================ рабочие области: «Поиск» и «Мониторинг»
+  const WS_KEYS = ['items', 'meta', 'tasks', 'stats', 'notes', 'planInfo', 'started', 'done', 'params', 'snapshot', 'selected', 'shown',
+    'deep', 'jobId', 'stopTerms', 'looseHidden', 'filters', 'section', 'view', 'openStories', 'openRows'];
+  function freshWs(name) {
+    return { items: new Map(), meta: new Map(), tasks: new Map(), stats: {}, notes: [], planInfo: [], started: 0, done: null, params: null,
+      snapshot: null, selected: null, shown: 150, deep: { queue: [], active: 0, total: 0, done: 0 }, jobId: null, stopTerms: [], looseHidden: [],
+      filters: { tier: new Set(), origin: new Set(), kw: new Set(), rel: new Set(), type: new Set(), country: new Set(), lang: new Set(), src: new Set(), access: new Set(), flag: new Set(), platform: new Set() },
+      section: 'media', view: name === 'watch' ? 'sources' : store.get('view', 'list'), openStories: new Set(), openRows: new Set() };
+  }
+  function switchWs(name) {
+    if (S.wsName === name) return;
+    const cur = {};
+    for (const k of WS_KEYS) cur[k] = S[k];
+    S.wsStore[S.wsName] = cur;
+    const next = S.wsStore[name] || freshWs(name);
+    for (const k of WS_KEYS) S[k] = next[k];
+    S.wsName = name;
+  }
+  // объект состояния области: активная — сам S, фоновая — сохранённая копия
+  function wsObj(name) { return name === S.wsName ? S : (S.wsStore[name] || (S.wsStore[name] = freshWs(name))); }
+
+  function searchMode() { return S.qtab === 'reports' ? 'reports' : (S.qtab === 'person' ? 'person' : 'topic'); }
+
   async function runSearch() {
-    if (S.running) return;
+    if (S.running) { toast('Дождитесь завершения текущего поиска', true); return; }
+    if (S.qtab === 'osint') return osintRun();
+    if (S.qtab === 'person' && !S.person) return personSearch();
+    const mode = searchMode();
     const q = queryParts();
-    if (!q.topics.length) { toast('Введите тему поиска', true); $('#qTopic').focus(); return; }
+    if (mode !== 'reports' && !q.topics.length) { toast('Введите тему поиска', true); $('#qTopic').focus(); return; }
     if (!S.langOn.size) { toast('Выберите хотя бы один язык', true); return; }
     if (S.preset !== 'custom') setPreset(S.preset);
     const [a, b] = S.range;
     if (b <= a) { toast('Конец периода раньше начала', true); return; }
     showView('results');
+    const T = S;
     S.running = true;
     setRunningUI(true);
     S.items.clear(); S.meta.clear(); S.tasks.clear(); S.notes = []; S.stats = {}; S.selected = null; S.snapshot = null;
-    S.done = null; S.shown = 150; S.deep = { queue: [], active: 0, total: 0, done: 0 };
+    S.done = null; S.shown = 150; S.deep = { queue: [], active: 0, total: 0, done: 0 }; S.openRows = new Set();
     renderBanner();
     renderDetail(null);
-    renderProgress('Подготовка терминов на ' + S.langOn.size + ' языках…');
+    renderProgress(mode === 'reports' ? 'Готовлю запросы по каталогу докладов…' : 'Подготовка терминов на ' + S.langOn.size + ' языках…');
     render();
     try {
-      const exp = await expand(false);
-      S.stopTerms = collectStopTerms(exp.plan);
-      const untranslated = untranslatedLangs(exp);
+      const exp = q.topics.length ? await expand(false) : { plan: {}, topics: [], context: [], origins: {} };
+      T.stopTerms = collectStopTerms(exp.plan);
+      const untranslated = untranslatedLangs(exp).filter(() => q.translate !== false);
       if (untranslated.length) {
         const msg = 'Перевод не получен для: ' + untranslated.join(', ') + ' — используется исходное написание. Проверьте «Термины».';
-        S.notes.push(msg);
+        T.notes.push(msg);
         toast(msg, true);
       }
+      const title = mode === 'reports' ? 'Доклады' + (q.topics.length ? ': ' + q.topics.join(', ') : '') :
+        (mode === 'person' ? 'Персона: ' + q.topics.join(', ') : '');
       const params = {
-        topics: q.topics, context: q.context, exclude: q.exclude, langs: [...S.langOn], plan: exp.plan,
+        mode, title, topics: q.topics, context: q.context, exclude: q.exclude, langs: [...S.langOn], plan: exp.plan,
         origins: exp.origins || termOrigins(exp.topics, exp.context),
         t_from: Math.floor(a.getTime() / 1000), t_to: Math.floor(b.getTime() / 1000), tz_offset: -new Date().getTimezoneOffset(),
-        providers: [...S.providers], types: [...S.types]
+        providers: [...S.providers], types: [...S.types], report_topic: mode === 'reports' && !!($('#optReportTopic') || {}).checked,
+        person: mode === 'person' && S.person ? { id: S.person.id, label: S.person.label } : undefined
       };
-      S.params = params;
-      addHistory(params);
-      S.started = Date.now();
-      if (SERVER) await streamSearch(params);
+      T.params = params;
+      loadSocial(q.topics.join(' '));
+      if (mode === 'topic') addHistory(params);
+      T.started = Date.now();
+      if (SERVER) await streamSearch(params, 'main');
       else await autonomousSearch(params);
     } catch (e) {
       if (e.name !== 'AbortError') toast('Ошибка поиска: ' + e.message, true);
     } finally {
       S.running = false;
       setRunningUI(false);
-      recompute(true);
-      renderProgress();
-      if (S.items.size && SERVER) startAutoCheck();
+      if (S.wsName === 'main') { recompute(true); renderProgress(); if (S.items.size && SERVER) startAutoCheck(); }
     }
   }
   function untranslatedLangs(exp) {
@@ -486,7 +550,9 @@
   }
   function setRunningUI(on) {
     $('#btnSearch').disabled = on;
-    $('#btnSearch').textContent = on ? 'ПОИСК…' : 'НАЙТИ';
+    $('#btnSearch').textContent = on ? 'ПОИСК…' : (S.qtab === 'osint' ? 'ПРОВЕРИТЬ' : 'НАЙТИ');
+    $('#btnWatchRun').disabled = on;
+    $('#btnWatchRun').textContent = on ? 'ОПРОС…' : 'ОБНОВИТЬ';
     $('#btnStop').classList.toggle('hidden', !on);
   }
   async function stopSearch() {
@@ -495,9 +561,10 @@
     toast('Поиск останавливается — уже найденные материалы сохранятся');
   }
 
-  async function streamSearch(params) {
+  async function streamSearch(params, wsName) {
     const ctrl = new AbortController();
     S.abort = ctrl;
+    const target = wsName || S.wsName;
     const r = await fetch('/api/search', { method: 'POST', headers: { 'X-OKO-Token': TOKEN, 'Content-Type': 'application/json' }, body: JSON.stringify(params), signal: ctrl.signal });
     if (!r.ok) { let m = 'HTTP ' + r.status; try { m = (await r.json()).error || m; } catch (e) { /* */ } throw new Error(m); }
     const reader = r.body.getReader();
@@ -516,41 +583,45 @@
           if (line.startsWith('event:')) ev = line.slice(6).trim();
           else if (line.startsWith('data:')) data += line.slice(5).trim();
         }
-        if (data) { try { onEvent(ev, JSON.parse(data)); } catch (e) { console.error(e); } }
+        if (data) { try { onEvent(ev, JSON.parse(data), target); } catch (e) { console.error(e); } }
       }
     }
   }
 
   const scheduleRender = debounce(() => { recompute(false); renderProgress(); }, 450);
-  function onEvent(ev, d) {
+  function onEvent(ev, d, wsName) {
+    const T = wsObj(wsName || S.wsName);
+    const active = T === S;
     if (ev === 'plan') {
+      T.jobId = d.job;
       S.jobId = d.job;
-      S.planInfo = d.providers || [];
-      for (const t of d.tasks || []) S.tasks.set(t.key, t);
-      S.notes = [...new Set(S.notes.concat(d.notes || []))];
-      renderProgress();
+      T.planInfo = d.providers || [];
+      for (const t of d.tasks || []) T.tasks.set(t.key, t);
+      T.notes = [...new Set(T.notes.concat(d.notes || []))];
+      if (active) renderProgress();
     } else if (ev === 'task') {
-      S.tasks.set(d.key, d);
-      scheduleRender();
+      T.tasks.set(d.key, d);
+      if (active) scheduleRender();
     } else if (ev === 'items') {
-      for (const it of d) mergeItem(it);
-      scheduleRender();
+      for (const it of d) mergeItem(it, T);
+      if (active) scheduleRender();
     } else if (ev === 'done') {
-      S.done = d;
-      S.stats = d;
-      if (d.notes) S.notes = [...new Set(S.notes.concat(d.notes))];
+      T.done = d;
+      T.stats = d;
+      if (d.notes) T.notes = [...new Set(T.notes.concat(d.notes))];
     } else if (ev === 'error') {
       toast(d.message || 'Ошибка', true);
-      S.notes.push(d.message);
+      T.notes.push(d.message);
     }
   }
-  function mergeItem(it) {
-    const old = S.items.get(it.id);
+  function mergeItem(it, T) {
+    T = T || S;
+    const old = T.items.get(it.id);
     if (old) {
       for (const k of ['_checking', 'resolved']) if (old[k] !== undefined) it[k] = old[k];
       if (old.authors && old.authors.length && !(it.authors && it.authors.length)) it.authors = old.authors;
     }
-    S.items.set(it.id, it);
+    T.items.set(it.id, it);
   }
 
   // ================================================================ автономный режим (файл открыт без сервера)
@@ -650,9 +721,11 @@
     if (S.selected && S.items.has(S.selected) && full !== 'skip-detail') renderDetail(S.items.get(S.selected), true);
   }
 
+  function isSocial(it) { return it.kind === 'social'; }
   function baseOk(it) {
-    if (S.mode === 'registry' && !(it.inRegistry || it.type === 'official' || it.type === 'intl_org' || it.type === 'academic')) return false;
-    if ((it.tier || 4) > S.minTier) return false;
+    if (isSocial(it) !== (S.section === 'social')) return false;
+    if (!isSocial(it) && S.mode === 'registry' && S.wsName !== 'watch' && !(it.inRegistry || it.type === 'official' || it.type === 'intl_org' || it.type === 'academic')) return false;
+    if (!isSocial(it) && (it.tier || 4) > S.minTier) return false;
     if (S.text) {
       const hay = C.normText(it.title + ' ' + (it.srcName || '') + ' ' + (it.snippet || '') + ' ' + (it.domain || ''));
       if (!hay.includes(C.normText(S.text))) return false;
@@ -668,7 +741,8 @@
     src: (it) => it.srcName || it.domain || '—',
     access: (it) => (it.paywall ? 'paid' : 'free'),
     rel: (it) => it.rel || 'unverified',
-    kw: kwKey
+    kw: kwKey,
+    platform: (it) => (it.extra && it.extra.platform) || '—'
   };
   function flagsOf(it) {
     const f = [];
@@ -679,11 +753,33 @@
     if (it.starred) f.push('star');
     return f;
   }
+  function hasTopic() {
+    const p = S.params;
+    if (!p || p.mode === 'reports') return false;
+    return Object.values(p.plan || {}).some((x) => (x.q || []).length);
+  }
+  function updateSectionCounts() {
+    let m = 0, so = 0;
+    for (const it of S.items.values()) { if (isSocial(it)) so++; else m++; }
+    const a = $('#cntMedia'), b = $('#cntSocial');
+    if (a) a.textContent = String(m);
+    if (b) b.textContent = String(so);
+  }
+  function setSection(sec) {
+    S.section = sec;
+    $$('#sectSeg button').forEach((x) => x.classList.toggle('on', x.dataset.s === sec));
+    S.shown = 150;
+    applyFilters(); render();
+  }
   function applyFilters() {
     const F = S.filters;
     const loose = [...S.items.values()].filter(baseOk);
-    const base = S.strict ? loose.filter((it) => C.REL_STRICT.has(it.rel)) : loose;
-    S.looseHidden = S.strict ? loose.filter((it) => !C.REL_STRICT.has(it.rel)) : [];
+    const strict = S.strict && hasTopic();
+    const base = strict ? loose.filter((it) => C.REL_STRICT.has(it.rel)) : loose;
+    S.looseHidden = strict ? loose.filter((it) => !C.REL_STRICT.has(it.rel)) : [];
+    updateSectionCounts();
+    const sc = $('.check.strict');
+    if (sc) sc.classList.toggle('hidden', !hasTopic());
     facetCounts = {};
     for (const dim of Object.keys(DIM)) facetCounts[dim] = new Map();
     facetCounts.flag = new Map();
@@ -718,6 +814,7 @@
     renderFacets();
     renderList();
     renderCount();
+    if (S.trTitles) translateVisibleTitles();
   }
   function renderCount() {
     const total = S.items.size;
@@ -730,10 +827,13 @@
   }
 
   function facetSection(title, dim, entries, labeler, limit) {
-    const sec = el('div', { class: 'fsec' });
+    const sec = el('details', { class: 'fsec' });
+    if (S.facetOpen.has(dim) || (S.filters[dim] && S.filters[dim].size)) sec.open = true;
+    sec.addEventListener('toggle', () => { if (sec.open) S.facetOpen.add(dim); else S.facetOpen.delete(dim); store.set('facetOpen', [...S.facetOpen]); });
     const reset = el('button', { title: 'Сбросить' }, S.filters[dim] && S.filters[dim].size ? 'сброс' : '');
-    reset.addEventListener('click', () => { S.filters[dim].clear(); applyFilters(); render(); });
-    sec.appendChild(el('h4', null, title, reset));
+    reset.addEventListener('click', (e) => { e.preventDefault(); S.filters[dim].clear(); applyFilters(); render(); });
+    const sel = S.filters[dim] && S.filters[dim].size ? el('span', { class: 'fsel' }, String(S.filters[dim].size)) : null;
+    sec.appendChild(el('summary', null, el('h4', null, title, sel, reset)));
     const max = Math.max(1, ...entries.map((e) => e[1]));
     const showAll = S.facetMore.has(dim);
     const list = limit && !showAll ? entries.slice(0, limit) : entries;
@@ -770,18 +870,22 @@
     const closeBtn = el('button', { class: 'btn small mob-only', style: 'margin:0 14px 8px' }, 'Закрыть');
     closeBtn.addEventListener('click', () => $('#facets').classList.add('closed'));
     box.appendChild(closeBtn);
+    if (S.section === 'social') {
+      box.appendChild(facetSection('Платформа', 'platform', sortedEntries(facetCounts.platform), (k) => ((S.social && S.social.platforms && S.social.platforms[k]) || {}).name || k));
+    }
     box.appendChild(facetSection('Уровень', 'tier', sortedEntries(facetCounts.tier, ['1', '2', '3', '4']), (k) => {
       const t = C.TIERS[k];
       return el('span', null, el('span', { class: 'tier t' + k, style: 'width:18px;height:16px;font-size:10px;margin-right:6px' }, t.code), t.label.split('—')[1].trim());
     }));
     box.appendChild(facetSection('Статус информации', 'origin', sortedEntries(facetCounts.origin, ['primary', 'reprint', 'unknown']), (k) => ({ primary: '✔ Первоисточник', reprint: '⟳ Перепубликация', unknown: '? Не определено' }[k])));
-    if (facetCounts.kw.size > 1 || S.filters.kw.size) box.appendChild(facetSection('Найдено по ключевому слову', 'kw', sortedEntries(facetCounts.kw), kwLabel, 10));
+    const topic = hasTopic();
+    if (topic && (facetCounts.kw.size > 1 || S.filters.kw.size)) box.appendChild(facetSection('Найдено по ключевому слову', 'kw', sortedEntries(facetCounts.kw), kwLabel, 10));
     box.appendChild(facetSection('Тип источника', 'type', sortedEntries(facetCounts.type), (k) => C.TYPE_LABELS[k] || k));
     box.appendChild(facetSection('Страна издания', 'country', sortedEntries(facetCounts.country), (k) => (k === '—' ? 'не определена' : countryName(k) + ' (' + k + ')'), 12));
     box.appendChild(facetSection('Язык', 'lang', sortedEntries(facetCounts.lang), (k) => (k === '—' ? 'не определён' : langName(k)), 10));
     box.appendChild(facetSection('Издание', 'src', sortedEntries(facetCounts.src), (k) => k, 12));
     box.appendChild(facetSection('Доступ', 'access', sortedEntries(facetCounts.access, ['free', 'paid']), (k) => (k === 'paid' ? 'Платный / частично' : 'Свободный')));
-    box.appendChild(facetSection('Соответствие теме', 'rel', sortedEntries(facetCounts.rel, ['title', 'rtitle', 'text', 'rtext', 'body', 'passing', 'unverified', 'absent']), (k) => C.REL_LABELS[k] || k));
+    if (topic) box.appendChild(facetSection('Соответствие теме', 'rel', sortedEntries(facetCounts.rel, ['title', 'rtitle', 'text', 'rtext', 'body', 'passing', 'unverified', 'absent']), (k) => C.REL_LABELS[k] || k));
     const fl = new Map(facetCounts.flag);
     fl.set('nostate', facetCounts.flag.get('state') || 0);
     box.appendChild(facetSection('Отметки', 'flag', [...fl.entries()].filter(([k]) => ['new', 'bm', 'ca', 'star', 'nostate'].includes(k)), (k) => ({
@@ -885,10 +989,10 @@
     if (it.ctx_term) parts.push('контекст «' + it.ctx_term + '»');
     return parts.join('; ');
   }
-  function foundBy(it) {
+  function foundBy(it, noHeader) {
     const e = explain(it);
     const box = el('div', { class: 'foundby' });
-    box.appendChild(el('div', { class: 'fb-h' }, icon('search'), 'Найдено по'));
+    if (!noHeader) box.appendChild(el('div', { class: 'fb-h' }, icon('search'), 'Найдено по'));
     const row = (k, ...v) => box.appendChild(el('div', { class: 'fb-r' }, el('span', { class: 'fb-k' }, k), el('span', { class: 'fb-v' }, ...v)));
     row('Ключевое слово', e.kw ? el('b', { class: 'fb-kw' }, '«' + e.kw + '»') : el('span', { class: 'muted' }, 'не определено'));
     if (it.term) {
@@ -929,6 +1033,15 @@
     return el('span', null, el('span', { class: cls, title: 'Найдено по: ' + foundByText(it), dir: 'auto' }, '⌕ ' + txt));
   }
 
+  const PLATFORM_CODE = { telegram: 'TG', vk: 'VK', x: 'X', linkedin: 'in', facebook: 'FB', instagram: 'IG', whatsapp: 'WA', youtube: 'YT' };
+  function platformBadge(p) {
+    const name = ((S.social && S.social.platforms && S.social.platforms[p]) || {}).name || p || 'соцсеть';
+    return el('span', { class: 'plat p-' + (p || 'x'), title: name }, PLATFORM_CODE[p] || '•');
+  }
+  function reportName(rid) {
+    const r = S.catalog && S.catalog.reports ? S.catalog.reports.find((x) => x.id === rid) : null;
+    return r ? r.name : '';
+  }
   function rowEl(it, opts) {
     opts = opts || {};
     const url = it.resolved || it.url;
@@ -936,33 +1049,80 @@
     title.setAttribute('lang', it.lang === 'zh' && /[國臺灣這們]/.test(it.title) ? 'zh-Hant' : (it.lang || ''));
     title.setAttribute('dir', 'auto');
     title.addEventListener('click', (e) => { e.stopPropagation(); select(it.id, true); });
+    const social = isSocial(it);
+    const plat = social && it.extra ? it.extra.platform : '';
     const meta = el('div', { class: 'imeta' },
       el('span', { class: 'src' }, it.srcName || it.domain || '—'),
-      it.country ? el('span', { class: 'cc', title: countryName(it.country) }, it.country) : null,
+      it.country && !social ? el('span', { class: 'cc', title: countryName(it.country) }, it.country) : null,
       it.lang ? el('span', { class: 'lg', title: langName(it.lang) }, it.lang.toUpperCase()) : null,
-      el('time', { title: fmtDate(it.ts) + ' (' + tzLabel() + ') · ' + fmtUTC(it.ts) }, fmtShort(it.ts)), kwTag(it));
-    if (it.rel && !C.REL_STRICT.has(it.rel)) meta.appendChild(el('span', null, el('span', { class: 'tag loose', title: C.REL_LABELS[it.rel] }, it.rel === 'passing' ? 'вскользь' : it.rel === 'absent' ? 'не найдено на странице' : 'не проверено')));
-    if (it.new) meta.appendChild(el('span', null, el('span', { class: 'tag new', title: 'Не встречалось в прошлых поисках по этой теме' }, 'НОВОЕ')));
+      el('time', { title: it.ts ? fmtDate(it.ts) + ' (' + tzLabel() + ') · ' + fmtUTC(it.ts) : 'дата не указана — в пределах периода по данным поисковика' }, it.ts ? fmtShort(it.ts) : 'без даты'), kwTag(it));
+    if (it.rel && !C.REL_STRICT.has(it.rel) && hasTopic()) meta.appendChild(el('span', null, el('span', { class: 'tag loose', title: C.REL_LABELS[it.rel] }, it.rel === 'passing' ? 'вскользь' : it.rel === 'absent' ? 'не найдено на странице' : 'не проверено')));
+    if (it.new) meta.appendChild(el('span', null, el('span', { class: 'tag new', title: 'Не встречалось в прошлых поисках' }, 'НОВОЕ')));
     if (it.paywall) meta.appendChild(el('span', null, el('span', { class: 'tag pw', title: C.PAYWALL_LABELS[it.paywall] || '' }, 'платный')));
     if (it.state) meta.appendChild(el('span', null, el('span', { class: 'tag st' + (it.state === 'public' ? ' public' : ''), title: it.state === 'control' ? 'Государственное СМИ (под контролем государства)' : 'Государственное финансирование, редакционная независимость' }, it.state === 'control' ? 'гос.' : 'гос. фин.')));
     if (it.origin && it.origin.status === 'reprint' && it.origin.credited && it.origin.credited.label) meta.appendChild(el('span', null, el('span', { class: 'tag cred', title: it.origin.reason }, '← ' + it.origin.credited.label)));
     if (it.storySize > 1 && !opts.inStory) meta.appendChild(el('span', null, el('span', { class: 'tag story', title: 'Публикаций по этому сюжету' }, '+' + (it.storySize - 1) + ' в сюжете')));
     if (it.bm) meta.appendChild(el('span', null, el('span', { class: 'tag bm', title: 'Источник из ваших закладок: ' + it.bm }, 'закладки')));
     if (it.kind === 'paper') meta.appendChild(el('span', null, el('span', { class: 'tag', title: 'Научная публикация' }, 'наука')));
-    if (it.kind === 'report') meta.appendChild(el('span', null, el('span', { class: 'tag', title: 'Доклад / документ' }, 'доклад')));
-    const main = el('div', null, title, meta);
-    if (it.snippet && it.snippet.length > 30 && S.density === 'full') main.appendChild(el('div', { class: 'isnip', lang: it.lang || '', dir: 'auto' }, it.snippet));
+    if (it.kind === 'report') {
+      const rn = it.extra && it.extra.report ? reportName(it.extra.report) : '';
+      meta.appendChild(el('span', null, el('span', { class: 'tag rep', title: rn ? 'Доклад из каталога: ' + rn : 'Доклад / документ' }, rn ? 'доклад: ' + rn.split('(')[0].trim().slice(0, 48) : 'доклад')));
+      if (it.extra && it.extra.topic_hit) meta.appendChild(el('span', null, el('span', { class: 'tag kw', title: 'Упоминает тему' }, '⌕ ' + it.extra.topic_hit)));
+    }
+    if (social && it.extra && it.extra.views) meta.appendChild(el('span', { class: 'muted', title: 'Просмотры' }, '👁 ' + it.extra.views));
+    const main = el('div', { class: 'imain' }, title);
+    const tr = S.trTitles && it.lang && it.lang !== 'ru' ? S.tr.get(it.id) : null;
+    if (tr && tr.title) main.appendChild(el('div', { class: 'itr', lang: 'ru' }, tr.title));
+    main.appendChild(meta);
+    const snip = it.snippet && it.snippet.length > 30 && C.normText(it.snippet) !== C.normText(it.title) ? it.snippet : '';
+    const open = S.density === 'full' || S.openRows.has(it.id);
+    if (snip && open) main.appendChild(el('div', { class: 'isnip', lang: it.lang || '', dir: 'auto' }, snip));
     const star = el('button', { class: 'star' + (it.starred ? ' on' : ''), title: it.starred ? 'Убрать из досье' : 'Добавить в досье (S)' }, icon('star', it.starred));
     star.addEventListener('click', (e) => { e.stopPropagation(); toggleDossier(it); });
+    const side = el('div', { class: 'iside' });
+    if (snip && S.density !== 'full') {
+      const ex = el('button', { class: 'iexp', title: open ? 'Свернуть аннотацию' : 'Показать аннотацию' }, open ? '▾' : '▸');
+      ex.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (S.openRows.has(it.id)) S.openRows.delete(it.id); else S.openRows.add(it.id);
+        row.replaceWith(rowEl(it, opts));
+      });
+      side.appendChild(ex);
+    }
+    side.appendChild(star);
     const row = el('article', { class: 'item' + (S.selected === it.id ? ' sel' : '') + (it.origin && it.origin.status === 'reprint' ? ' dimmed' : ''), data: { id: it.id } },
-      el('div', null, tierBadge(it.tier)), el('div', null, originBadge(it.origin)), main, star);
+      el('div', null, social ? platformBadge(plat) : tierBadge(it.tier)), el('div', null, originBadge(it.origin)), main, side);
     row.addEventListener('click', () => select(it.id));
     return row;
   }
 
+  function socialPanel() {
+    const box = el('div', { class: 'socialpanel' });
+    const info = S.social;
+    const q = S.params && S.params.topics ? S.params.topics.join(' ') : $('#qTopic').value;
+    box.appendChild(el('div', { class: 'sp-h' }, el('b', null, 'Соцсети'), ' — публичные публикации. ',
+      el('span', { class: 'muted' }, 'Telegram-каналы опрашиваются без ключей; остальные платформы — по ключам API (Настройки → Соцсети).')));
+    if (info && info.keys) {
+      const k = info.keys;
+      const miss = [];
+      if (!k.vk) miss.push('ВКонтакте — сервисный ключ VK');
+      if (!k.x) miss.push('X — ключ API X (платный)');
+      if (!k.brave && !k.gcse) miss.push('LinkedIn, Facebook, Instagram, WhatsApp-каналы — ключ Brave Search или Google');
+      if (!k.youtube) miss.push('YouTube — ключ Google');
+      if (miss.length) box.appendChild(el('div', { class: 'muted', style: 'font-size:12px;margin:4px 0' }, 'Не подключено: ' + miss.join(' · ')));
+    }
+    const links = el('div', { class: 'sp-links' }, el('span', { class: 'muted' }, 'Искать на платформе (откроется в браузере): '));
+    for (const [pid, p] of Object.entries((info && info.platforms) || {})) {
+      const u = p.search.replace('{q}', encodeURIComponent(q || ''));
+      links.appendChild(extLink(u, p.name, 'btn small ghost'));
+    }
+    box.appendChild(links);
+    return box;
+  }
   function renderList() {
     const list = clear($('#list'));
     list.classList.toggle('compact', S.density !== 'full');
+    if (S.section === 'social' && (S.items.size || S.params)) list.appendChild(socialPanel());
     if (!S.items.size) {
       list.appendChild(emptyState());
       return;
@@ -970,6 +1130,31 @@
     if (!visible.length) {
       list.appendChild(el('div', { class: 'empty' }, el('h2', null, 'Нет материалов под выбранные фильтры'),
         el('p', null, 'Ослабьте фильтры слева, переключитесь на «Широкий охват» или снизьте порог уровня.')));
+      if (S.looseHidden.length) list.appendChild(looseBar());
+      return;
+    }
+    if (S.view === 'sources') {
+      const groups = new Map();
+      for (const it of visible) {
+        const k = it.srcName || it.domain || '—';
+        if (!groups.has(k)) groups.set(k, []);
+        groups.get(k).push(it);
+      }
+      const arr = [...groups.entries()].sort((a, b) => (a[1][0].tier || 4) - (b[1][0].tier || 4) || b[1].length - a[1].length);
+      for (const [k, members] of arr) {
+        members.sort((a, b) => (b.ts || 0) - (a.ts || 0));
+        const nNew = members.filter((x) => x.new).length;
+        const open = S.openStories.has('src:' + k);
+        const head = el('div', { class: 'grp' }, isSocial(members[0]) ? platformBadge(members[0].extra && members[0].extra.platform) : tierBadge(members[0].tier),
+          k + ' · ' + members.length, nNew ? el('span', { class: 'tag new' }, 'новых: ' + nNew) : null);
+        list.appendChild(head);
+        members.slice(0, open ? members.length : 5).forEach((it) => list.appendChild(rowEl(it)));
+        if (members.length > 5) {
+          const tg = el('button', { class: 'story-toggle', style: 'margin:0 0 6px 64px' }, open ? '▾ свернуть' : '▸ ещё ' + (members.length - 5));
+          tg.addEventListener('click', () => { if (open) S.openStories.delete('src:' + k); else S.openStories.add('src:' + k); renderList(); });
+          list.appendChild(tg);
+        }
+      }
       if (S.looseHidden.length) list.appendChild(looseBar());
       return;
     }
@@ -1077,6 +1262,94 @@
     if (it && SERVER && !it.meta && !it._checking && !fromLink && S.settings.ui_autocheck_open !== false) deepCheck(it, true);
   }
 
+  function dsec(title, body, open, key, extraCls) {
+    const d = el('details', { class: 'dsec' + (extraCls ? ' ' + extraCls : '') });
+    const k = key || title;
+    const st = S.cardOpen || (S.cardOpen = store.get('cardOpen', {}));
+    d.open = k in st ? st[k] : !!open;
+    d.addEventListener('toggle', () => { st[k] = d.open; store.set('cardOpen', st); });
+    d.appendChild(el('summary', null, typeof title === 'string' ? el('h4', null, title) : title));
+    d.appendChild(body);
+    return d;
+  }
+  function watchKeyOf(it) {
+    if (isSocial(it) && it.extra && it.extra.platform === 'telegram' && it.extra.channel) return { kind: 'channel', id: it.extra.channel, name: it.srcName };
+    if (it.source_id && S.registry.byId.get(it.source_id)) return { kind: 'source', id: it.source_id, name: S.registry.byId.get(it.source_id).name };
+    return null;
+  }
+  function isWatched(w) {
+    if (!w) return false;
+    return w.kind === 'source' ? S.watch.sources.includes(w.id) : S.watch.channels.some((c) => c.id.toLowerCase() === w.id.toLowerCase());
+  }
+  function toggleWatch(w, on) {
+    if (!w) return;
+    const now = on === undefined ? !isWatched(w) : on;
+    if (w.kind === 'source') S.watch.sources = S.watch.sources.filter((x) => x !== w.id).concat(now ? [w.id] : []);
+    else S.watch.channels = S.watch.channels.filter((c) => c.id.toLowerCase() !== w.id.toLowerCase()).concat(now ? [{ platform: 'telegram', id: w.id, name: w.name || w.id, lang: w.lang || 'ru' }] : []);
+    saveWatch();
+    toast(now ? 'Добавлено в мониторинг: ' + (w.name || w.id) : 'Убрано из мониторинга: ' + (w.name || w.id));
+  }
+  const saveWatch = debounce(() => {
+    store.set('watch', S.watch);
+    updateWatchCount();
+    if (SERVER) api('/api/state/watch', { method: 'PUT', body: S.watch }).catch(() => toast('Список мониторинга сохранён только в браузере', true));
+    if (!$('#watchPanel').classList.contains('hidden')) renderWatchPanel();
+  }, 300);
+  function updateWatchCount() { const n = S.watch.sources.length + S.watch.channels.length; $('#watchCount').textContent = String(n); }
+
+  async function translateItem(it, force) {
+    const cur = S.tr.get(it.id);
+    if (!SERVER || (cur && (cur.loading || (cur.done && !cur.titleOnly && !force)))) return;
+    const m = it.meta && it.meta.ok ? it.meta : null;
+    const snip = (m && (m.description || m.lead)) || it.snippet || '';
+    S.tr.set(it.id, { loading: true });
+    try {
+      const r = await api('/api/translate', { method: 'POST', body: { texts: [it.title, snip.slice(0, 2500)], to: 'ru' } });
+      S.tr.set(it.id, { title: r.texts[0] || '', snippet: snip ? r.texts[1] || '' : '', engine: r.engine, done: true });
+    } catch (e) { S.tr.set(it.id, { error: e.message, done: true }); }
+    if (S.selected === it.id) renderDetail(S.items.get(it.id) || it, true);
+  }
+  async function translateFull(it) {
+    const cur = S.trFull.get(it.id);
+    if (cur && cur.loading) return;
+    S.trFull.set(it.id, { loading: true });
+    if (S.selected === it.id) renderDetail(it, true);
+    try { S.trFull.set(it.id, await api('/api/translate/article', { method: 'POST', body: { url: it.url } })); }
+    catch (e) { S.trFull.set(it.id, { ok: false, error: e.message }); }
+    if (S.selected === it.id) renderDetail(S.items.get(it.id) || it, true);
+  }
+  function translationBlock(it) {
+    const box = el('div', { class: 'dtr' });
+    const url = it.resolved || (it.meta && it.meta.final_url) || it.url;
+    if (!SERVER) {
+      box.appendChild(extLink('https://translate.google.com/translate?sl=auto&tl=ru&u=' + encodeURIComponent(url), 'Открыть перевод страницы в Google Переводчике ↗'));
+      return box;
+    }
+    const tr = S.tr.get(it.id);
+    if (!tr || tr.loading) box.appendChild(el('div', { class: 'muted' }, el('span', { class: 'spinner' }), ' перевожу заголовок и аннотацию…'));
+    else if (tr.error) box.appendChild(el('div', { class: 'muted' }, 'Перевод недоступен: ' + tr.error));
+    else {
+      box.appendChild(el('div', { class: 'dtr-title', lang: 'ru' }, tr.title));
+      if (tr.snippet) box.appendChild(el('div', { class: 'dsnip', lang: 'ru' }, tr.snippet));
+      box.appendChild(el('div', { class: 'muted', style: 'font-size:11px;margin-top:4px' }, 'машинный перевод · ' + (tr.engine || '')));
+    }
+    const full = S.trFull.get(it.id);
+    const acts = el('div', { class: 'ptool', style: 'margin:8px 0 0' });
+    if (!full || (!full.loading && !full.ok)) acts.appendChild(actBtn('translate', 'Перевести полный текст', () => translateFull(it), 'Извлечь текст статьи и перевести на русский прямо здесь'));
+    acts.appendChild(actBtn('reader', 'Читать в переводе', () => openReader(it, true), 'Режим чтения с переводом на русский (для печати)'));
+    acts.appendChild(actBtn('pdf', 'PDF перевода', () => makePdf(it, 'reader_ru'), 'Сохранить перевод статьи в PDF'));
+    box.appendChild(acts);
+    if (full && full.loading) box.appendChild(el('div', { class: 'muted', style: 'margin-top:6px' }, el('span', { class: 'spinner' }), ' извлекаю и перевожу текст (до минуты)…'));
+    else if (full && !full.ok) box.appendChild(el('div', { class: 'muted', style: 'margin-top:6px' }, full.error || 'не удалось'));
+    else if (full && full.ok) {
+      const body = el('div', { class: 'dtr-full', lang: 'ru' });
+      for (const b of full.blocks) body.appendChild(el(b.k === 'h2' || b.k === 'h3' ? 'h5' : 'p', null, b.tr || b.t));
+      if (full.truncated) body.appendChild(el('p', { class: 'muted' }, '… переведено начало статьи (длинный текст). Полностью — «Читать в переводе».'));
+      box.appendChild(dsec('Полный текст (перевод · ' + (full.engine || '') + ')', body, true, 'trfull'));
+    }
+    return box;
+  }
+
   function renderDetail(it, keepScroll) {
     const box = $('#detail');
     const scroll = box.scrollTop;
@@ -1085,28 +1358,43 @@
       box.classList.add('closed');
       box.appendChild(el('div', { class: 'dempty' }, el('h3', null, 'Карточка материала'),
         el('p', null, 'Выберите материал в ленте — здесь появятся:'),
-        el('ul', null, el('li', null, 'заголовок, авторы, издание, сайт-источник'), el('li', null, 'уровень авторитетности и тип источника'),
-          el('li', null, 'статус: первоисточник или перепубликация — с обоснованием'), el('li', null, 'сюжет: кто опубликовал первым'),
-          el('li', null, 'PDF страницы, режим чтения, веб-архив, перевод'))));
+        el('ul', null, el('li', null, 'по какому ключевому слову найден'), el('li', null, 'заголовок, авторы, издание, уровень авторитетности'),
+          el('li', null, 'первоисточник или перепубликация — с обоснованием'), el('li', null, 'перевод на русский'),
+          el('li', null, 'PDF, режим чтения, веб-архив'))));
       return;
     }
     box.classList.remove('closed');
+    const social = isSocial(it);
     const url = it.resolved || (it.meta && it.meta.final_url) || it.url;
     const close = el('button', { class: 'dclose', title: 'Закрыть (Esc)' }, '×');
     close.addEventListener('click', () => { S.selected = null; renderDetail(null); $$('#list .item.sel').forEach((r) => r.classList.remove('sel')); });
+    const plat = social && it.extra ? (((S.social && S.social.platforms && S.social.platforms[it.extra.platform]) || {}).name || it.extra.platform) : '';
+    const kicker = social ? 'Соцсети · ' + plat : (C.TYPE_LABELS[it.type] || 'Материал') + (it.kind === 'paper' ? ' · научная публикация' : '') + (it.kind === 'report' ? ' · доклад' : '');
     const head = el('div', { class: 'dhead' },
-      el('div', { class: 'dkicker' }, el('span', null, (C.TYPE_LABELS[it.type] || 'Материал') + (it.kind === 'paper' ? ' · научная публикация' : '')), close),
+      el('div', { class: 'dkicker' }, el('span', null, kicker), close),
       marked(it.title, it.hit === 'title' ? it.term : '', { class: 'dtitle', lang: it.lang || '', dir: 'auto' }, 'h2'));
+    const needTr = it.lang && it.lang !== 'ru';
+    const trc = needTr ? S.tr.get(it.id) : null;
+    if (trc && trc.title) head.appendChild(el('div', { class: 'dtitle-ru', lang: 'ru' }, trc.title));
+    head.appendChild(el('div', { class: 'dsub' }, (it.srcName || it.domain || '') + (it.ts ? ' · ' + fmtDate(it.ts) : ' · без даты') + (it.authors && it.authors.length ? ' · ' + it.authors.slice(0, 3).join(', ') : '')));
     const acts = el('div', { class: 'dactions' });
-    const openBtn = el('a', { class: 'btn small', href: url, target: '_blank', rel: 'noopener noreferrer', title: 'Открыть оригинал (O)' }, icon('ext'), 'Оригинал');
-    acts.appendChild(openBtn);
+    acts.appendChild(el('a', { class: 'btn small', href: url, target: '_blank', rel: 'noopener noreferrer', title: 'Открыть оригинал (O)' }, icon('ext'), 'Оригинал'));
     acts.appendChild(actBtn('copy', 'Ссылка', () => copyText(url)));
     acts.appendChild(actBtn('quote', 'Цитата', () => copyText(C.citation(it)), 'Библиографическая ссылка (ГОСТ Р 7.0.5)'));
-    const st = actBtn('star', it.starred ? 'В досье ✓' : 'В досье', () => toggleDossier(it));
-    acts.appendChild(st);
+    acts.appendChild(actBtn('star', it.starred ? 'В досье ✓' : 'В досье', () => toggleDossier(it), 'Избранное: сохранить материал с заметкой'));
+    const w = watchKeyOf(it);
+    if (w) {
+      const on = isWatched(w);
+      const wb = actBtn('eye', on ? 'Мониторинг ✓' : 'Следить за источником', () => { toggleWatch(w); renderDetail(it, true); },
+        (on ? 'Источник в мониторинге: ' : 'Добавить в мониторинг — лента последних публикаций: ') + (w.name || w.id));
+      if (on) wb.classList.add('on');
+      acts.appendChild(wb);
+    }
     head.appendChild(acts);
     box.appendChild(head);
-    box.appendChild(foundBy(it));
+
+    const e = explain(it);
+    box.appendChild(dsec(el('h4', null, 'Найдено по', el('span', { class: 'dsum' }, e.kw ? '«' + e.kw + '»' + (it.term ? ' · ' + termShown(it) : '') : '')), foundBy(it, true), true, 'found', 'foundsec'));
 
     // статус
     const o = it.origin || { status: 'unknown', reason: '', confidence: 'low' };
@@ -1118,54 +1406,72 @@
       if (o.credited.ref && S.items.has(o.credited.ref)) {
         const ref = S.items.get(o.credited.ref);
         const a = el('a', { href: '#' }, o.credited.label + ' — ' + ref.title.slice(0, 90));
-        a.addEventListener('click', (e) => { e.preventDefault(); select(ref.id); });
+        a.addEventListener('click', (ev) => { ev.preventDefault(); select(ref.id); });
         cr.appendChild(a);
       } else if (o.credited.url) cr.appendChild(extLink(o.credited.url, o.credited.label));
       else cr.appendChild(el('b', null, o.credited.label));
       sbox.appendChild(cr);
     }
-    const chk = el('div', { class: 'scheck' });
-    if (it._checking) chk.append(el('span', { class: 'spinner' }), el('span', { class: 'muted' }, 'Изучаю страницу: canonical, авторы, агентские пометки…'));
-    else {
-      const b = actBtn('shield', it.meta ? 'Проверить повторно' : 'Проверить первоисточник', () => deepCheck(it, false), 'Загрузить страницу и проверить признаки перепубликации (C)');
-      chk.appendChild(b);
-      if (it.meta && !it.meta.ok) chk.appendChild(el('span', { class: 'muted', style: 'font-size:12px' }, it.meta.error || 'страница недоступна'));
-      else if (it.meta) chk.appendChild(el('span', { class: 'muted', style: 'font-size:12px' }, 'страница проверена'));
+    if (!social) {
+      const chk = el('div', { class: 'scheck' });
+      if (it._checking) chk.append(el('span', { class: 'spinner' }), el('span', { class: 'muted' }, 'Изучаю страницу: canonical, авторы, агентские пометки…'));
+      else {
+        chk.appendChild(actBtn('shield', it.meta ? 'Проверить повторно' : 'Проверить первоисточник', () => deepCheck(it, false), 'Загрузить страницу и проверить признаки перепубликации (C)'));
+        if (it.meta && !it.meta.ok) chk.appendChild(el('span', { class: 'muted', style: 'font-size:12px' }, it.meta.error || 'страница недоступна'));
+        else if (it.meta) chk.appendChild(el('span', { class: 'muted', style: 'font-size:12px' }, 'страница проверена'));
+      }
+      sbox.appendChild(chk);
     }
-    sbox.appendChild(chk);
     box.appendChild(sbox);
 
-    // таблица сведений
+    // перевод
+    if (needTr) {
+      if (SERVER && !S.tr.has(it.id) && S.settings.ui_autotranslate !== false) translateItem(it);
+      box.appendChild(dsec('Перевод на русский', translationBlock(it), true, 'tr'));
+    }
+
+    // сведения
     const T = C.TIERS[it.tier] || C.TIERS[4];
     const src = it.source_id ? S.registry.byId.get(it.source_id) : null;
     const m = it.meta && it.meta.ok ? it.meta : null;
     const authors = (m && m.authors && m.authors.length ? m.authors : it.authors) || [];
-    const rows = [
-      ['Заголовок', el('span', { lang: it.lang || '', dir: 'auto' }, it.title)],
-      ['Авторы', authors.length ? authors.join(', ') : el('span', { class: 'muted' }, it.meta ? 'не указаны на странице' : 'не указаны в выдаче — нажмите «Проверить первоисточник»')],
+    const main = [
       ['Издание', el('span', null, it.srcName || '—', src && src.note ? el('span', { class: 'sub' }, src.note) : null, m && m.site_name && C.normText(m.site_name) !== C.normText(it.srcName || '') ? el('span', { class: 'sub' }, 'по данным страницы: ' + m.site_name) : null)],
+      ['Авторы', authors.length ? authors.join(', ') : el('span', { class: 'muted' }, social ? '—' : (it.meta ? 'не указаны на странице' : 'не указаны в выдаче — нажмите «Проверить первоисточник»'))],
+      ['Опубликовано', it.ts ? el('span', null, fmtDate(it.ts) + ' (' + tzLabel() + ')', el('span', { class: 'sub' }, fmtUTC(it.ts) + (it.prec === 'day' ? ' · точность — день' : '') + ' · ' + ago(it.ts))) : el('span', { class: 'muted' }, 'дата не указана — в пределах периода по данным поисковика')],
+      social ? ['Платформа', plat + (it.extra && it.extra.channel ? ' · @' + it.extra.channel : '') + (it.extra && it.extra.views ? ' · просмотров: ' + it.extra.views : '')] :
+        ['Уровень', el('span', null, tierBadge(it.tier), ' ', T.label, ' ', el('span', { class: 'stars' }, '★'.repeat(T.stars) + '☆'.repeat(3 - T.stars)), el('span', { class: 'sub' }, T.desc))]
+    ];
+    if (social && it.extra && it.extra.fwd) main.push(['Переслано из', it.extra.fwd.url ? extLink(it.extra.fwd.url, it.extra.fwd.name || it.extra.fwd.url) : it.extra.fwd.name]);
+    if (it.kind === 'report' && it.extra && it.extra.report) {
+      const r = S.catalog && S.catalog.reports.find((x) => x.id === it.extra.report);
+      if (r) main.push(['Доклад', el('span', null, r.name, el('span', { class: 'sub' }, r.cadence + (r.rank ? ' · есть рейтинг стран' : '')), extLink(r.url, 'страница доклада ↗'))]);
+    }
+    const more = [
+      ['Заголовок', el('span', { lang: it.lang || '', dir: 'auto' }, it.title)],
       ['Источник (сайт)', it.domain ? extLink('https://' + (src ? src.domains[0].split('/')[0] : it.domain), it.domain) : '—'],
-      ['Уровень авторитетности', el('span', null, tierBadge(it.tier), ' ', T.label, ' ', el('span', { class: 'stars' }, '★'.repeat(T.stars) + '☆'.repeat(3 - T.stars)), el('span', { class: 'sub' }, T.desc))],
-      ['Тип источника', C.TYPE_LABELS[it.type] || '—'],
+      ['Тип источника', social ? 'Соцсети' : (C.TYPE_LABELS[it.type] || '—')],
       ['Страна издания', it.country ? countryName(it.country) + ' (' + it.country + ')' : '—'],
       ['Язык', langName(it.lang)],
-      ['Опубликовано', el('span', null, fmtDate(it.ts) + ' (' + tzLabel() + ')', el('span', { class: 'sub' }, fmtUTC(it.ts) + (it.prec === 'day' ? ' · точность — день' : '') + (it.ts ? ' · ' + ago(it.ts) : '')))],
       ['Доступ', it.paywall ? el('span', { style: 'color:#f0c36a' }, C.PAYWALL_LABELS[it.paywall] + (m && m.paywall_evidence ? ' (' + m.paywall_evidence + ')' : '')) : 'свободный (по данным реестра)'],
       ['Гос. принадлежность', it.state === 'control' ? el('span', { style: 'color:#ff9c95' }, 'государственное СМИ (под контролем государства)') : it.state === 'public' ? 'государственное финансирование, редакционная независимость' : '—'],
       ['Найдено через', (it.via || []).join('; ')]
     ];
-    if (it.bm) rows.push(['Ваши закладки', it.bm + '. Аналитические центры, издания']);
-    if (m && m.canonical) rows.push(['Каноническая ссылка', extLink(m.canonical, m.canonical)]);
-    if (it.gn && url !== it.url) rows.push(['Адрес статьи', extLink(url, url)]);
-    if (it.pdf) rows.push(['PDF документа', extLink(it.pdf, 'скачать PDF ↗')]);
-    if (it.extra && it.extra.doi) rows.push(['DOI', extLink(it.extra.doi, it.extra.doi)]);
+    if (it.bm) more.push(['Ваши закладки', it.bm + '. Аналитические центры, издания']);
+    if (m && m.canonical) more.push(['Каноническая ссылка', extLink(m.canonical, m.canonical)]);
+    if (it.gn && url !== it.url) more.push(['Адрес статьи', extLink(url, url)]);
+    if (it.pdf) more.push(['PDF документа', extLink(it.pdf, 'скачать PDF ↗')]);
+    if (it.extra && it.extra.doi) more.push(['DOI', extLink(it.extra.doi, it.extra.doi)]);
     const tbl = el('table', { class: 'dtable' });
-    for (const [k, v] of rows) tbl.appendChild(el('tr', null, el('th', null, k), el('td', null, v)));
-    box.appendChild(tbl);
+    for (const [k, v] of main) tbl.appendChild(el('tr', null, el('th', null, k), el('td', null, v)));
+    const tbl2 = el('table', { class: 'dtable' });
+    for (const [k, v] of more) tbl2.appendChild(el('tr', null, el('th', null, k), el('td', null, v)));
+    const info = el('div', null, tbl, dsec('Все сведения', tbl2, false, 'allinfo', 'nested'));
+    box.appendChild(dsec('Сведения', info, true, 'info'));
 
     // аннотация
     const snip = (m && (m.description || m.lead)) || it.snippet;
-    if (snip) box.appendChild(el('div', { class: 'dsec' }, el('h4', null, 'Аннотация'), marked(snip, it.term, { class: 'dsnip', lang: it.lang || '', dir: 'auto' }, 'div')));
+    if (snip && C.normText(snip) !== C.normText(it.title)) box.appendChild(dsec(social ? 'Текст публикации' : 'Аннотация', marked(snip, it.term, { class: 'dsnip', lang: it.lang || '', dir: 'auto' }, 'div'), snip.length < 500 || social, 'snip'));
 
     // сюжет
     if (it.storySize > 1) {
@@ -1173,29 +1479,30 @@
       const ul = el('ul', { class: 'dlist' });
       members.forEach((x, i) => {
         const a = el('a', { href: '#', lang: x.lang || '', dir: 'auto' }, x.title);
-        a.addEventListener('click', (e) => { e.preventDefault(); select(x.id); });
+        a.addEventListener('click', (ev) => { ev.preventDefault(); select(x.id); });
         ul.appendChild(el('li', null, originBadge(x.origin, true), el('div', null, a,
           el('div', { class: 'm' }, fmtShort(x.ts) + ' · ' + (x.srcName || x.domain) + ' · ' + (C.TIERS[x.tier] || C.TIERS[4]).code, i === 0 ? el('span', { class: 'first' }, 'первым') : null))));
       });
-      box.appendChild(el('div', { class: 'dsec' }, el('h4', null, 'Сюжет · ' + members.length + ' публикаций (по времени)'), ul));
+      box.appendChild(dsec('Сюжет · ' + members.length + ' публикаций', ul, false, 'story'));
     }
     if (it.related && it.related.length) {
       const ul = el('ul', { class: 'dlist' });
       it.related.forEach((r) => ul.appendChild(el('li', null, el('span', { class: 'muted' }, '•'), el('div', null, extLink(r.url, r.title), el('div', { class: 'm' }, r.source)))));
-      box.appendChild(el('div', { class: 'dsec' }, el('h4', null, 'Связанные публикации (Google «Полное освещение»)'), ul));
+      box.appendChild(dsec('Связанные публикации · ' + it.related.length, ul, false, 'related'));
     }
 
     // действия
     const g = el('div', { class: 'dgrid' });
-    g.appendChild(actBtn('pdf', 'PDF оригинала', () => makePdf(it, 'original'), 'Сохранить страницу в PDF через браузер Chrome/Edge'));
-    g.appendChild(actBtn('reader', 'PDF (режим чтения)', () => makePdf(it, 'reader'), 'Чистый текст статьи с метаданными — в PDF'));
-    g.appendChild(actBtn('reader', 'Режим чтения / печать', () => openReader(it), 'Открыть текст статьи в режиме чтения для печати'));
-    g.appendChild(actBtn('translate', 'Перевести страницу', () => window.open('https://translate.google.com/translate?sl=auto&tl=ru&u=' + encodeURIComponent(url), '_blank', 'noopener')));
+    if (!social) {
+      g.appendChild(actBtn('pdf', 'PDF оригинала', () => makePdf(it, 'original'), 'Сохранить страницу в PDF через браузер Chrome/Edge'));
+      g.appendChild(actBtn('reader', 'PDF (режим чтения)', () => makePdf(it, 'reader'), 'Чистый текст статьи с метаданными — в PDF'));
+      g.appendChild(actBtn('reader', 'Режим чтения / печать', () => openReader(it), 'Открыть текст статьи в режиме чтения для печати'));
+    }
     g.appendChild(actBtn('archive', 'Сохранить в веб-архив', () => window.open('https://web.archive.org/save/' + url, '_blank', 'noopener'), 'Зафиксировать копию страницы в Wayback Machine'));
     g.appendChild(actBtn('search', 'Найти в веб-архиве', () => window.open('https://web.archive.org/web/*/' + url, '_blank', 'noopener')));
     g.appendChild(actBtn('archive', 'archive.today', () => window.open('https://archive.ph/submit/?url=' + encodeURIComponent(url), '_blank', 'noopener')));
     g.appendChild(actBtn('search', 'Этот заголовок в поиске', () => window.open('https://www.google.com/search?q=' + encodeURIComponent('"' + C.titleCore(it.title).slice(0, 110) + '"'), '_blank', 'noopener'), 'Найти другие публикации с тем же заголовком'));
-    box.appendChild(el('div', { class: 'dsec' }, el('h4', null, 'Действия'), g));
+    box.appendChild(dsec('Действия: PDF, архив', g, false, 'actions'));
 
     // заметка
     const d = S.dossier.get(it.id);
@@ -1206,7 +1513,7 @@
       S.dossier.get(it.id).note = note.value;
       saveDossier();
     });
-    box.appendChild(el('div', { class: 'dsec' }, el('h4', null, 'Заметка'), note));
+    box.appendChild(dsec('Заметка' + (d && d.note ? ' ✎' : ''), note, !!(d && d.note), 'note'));
     if (keepScroll) box.scrollTop = scroll;
   }
   function actBtn(ic, label, fn, title) {
@@ -1295,9 +1602,10 @@
       else { toast((r.error || 'PDF не создан') + ' — открываю режим чтения для печати', true); openReader(it); }
     } catch (e) { toast('PDF: ' + e.message, true); }
   }
-  function openReader(it) {
+  function openReader(it, ru) {
     if (!SERVER) { window.open(it.url, '_blank', 'noopener'); return; }
     const q = new URLSearchParams({ t: TOKEN, url: it.url, title: it.title, source: it.srcName || '', date: fmtDate(it.ts), status: ORIGIN_LABEL[it.origin ? it.origin.status : 'unknown'], tier: (C.TIERS[it.tier] || C.TIERS[4]).label, authors: (it.authors || []).join(', ') });
+    if (ru) q.set('tr', 'ru');
     window.open('/reader?' + q.toString(), '_blank', 'noopener');
   }
 
@@ -1456,7 +1764,7 @@
   }
 
   // ================================================================ источники
-  let srcFilter = { q: '', country: '', type: '', tier: '', channel: '', bm: '' };
+  let srcFilter = { q: '', country: '', type: '', tier: '', channel: '', bm: '', watch: '' };
   let userSrc = { overrides: {}, added: [] };
   async function renderSources() {
     const p = clear($('#view-sources'));
@@ -1475,11 +1783,12 @@
     q.addEventListener('input', debounce(() => { srcFilter.q = q.value; drawTable(); }, 200));
     const countries = [...new Set(S.sources.map((s) => s.country))].sort((a, b) => countryName(a).localeCompare(countryName(b)));
     const selC = sel([['', 'все страны']].concat(countries.map((c) => [c, countryName(c) + ' (' + c + ')'])), 'country');
-    const selT = sel([['', 'все типы']].concat(Object.entries(C.TYPE_LABELS).filter(([k]) => k !== 'unknown')), 'type');
+    const selT = sel([['', 'все типы']].concat(Object.entries(C.TYPE_LABELS).filter(([k]) => k !== 'unknown' && k !== 'social')), 'type');
     const selTier = sel([['', 'все уровни'], ['1', 'A'], ['2', 'B'], ['3', 'C']], 'tier');
     const selCh = sel([['', 'любой канал'], ['rss', 'есть RSS'], ['wp', 'есть поиск WordPress'], ['none', 'нет канала']], 'channel');
     const selBm = sel([['', 'все'], ['1', 'из закладок'], ['0', 'добавлены ОКО']], 'bm');
-    tool.append(q, selC, selT, selTier, selCh, selBm);
+    const selW = sel([['', 'мониторинг: все'], ['1', 'в мониторинге']], 'watch');
+    tool.append(q, selC, selT, selTier, selCh, selBm, selW);
     function sel(opts, key) {
       const s = el('select');
       for (const [v, l] of opts) { const o = el('option', { value: v }, l); if (srcFilter[key] === v) o.selected = true; s.appendChild(o); }
@@ -1501,18 +1810,21 @@
         (!srcFilter.country || s.country === srcFilter.country) && (!srcFilter.type || s.type === srcFilter.type) &&
         (!srcFilter.tier || String(s.tier) === srcFilter.tier) &&
         (!srcFilter.channel || (srcFilter.channel === 'none' ? !s.channel : (s.channel || '').includes(srcFilter.channel))) &&
-        (!srcFilter.bm || (srcFilter.bm === '1' ? !!s.bm : !s.bm)));
+        (!srcFilter.bm || (srcFilter.bm === '1' ? !!s.bm : !s.bm)) && (!srcFilter.watch || S.watch.sources.includes(s.id)));
       wrap.appendChild(el('div', { class: 'muted', style: 'margin-bottom:6px' }, 'Показано: ' + rows.length));
       const t = el('table', { class: 'tbl' });
-      t.appendChild(el('tr', null, el('th', null, 'Вкл.'), el('th', null, 'Уровень'), el('th', null, 'Источник'), el('th', null, 'Сайт'), el('th', null, 'Страна'), el('th', null, 'Тип'), el('th', null, 'Языки'), el('th', null, 'Канал'), el('th', null, 'Закладки')));
+      t.appendChild(el('tr', null, el('th', { title: 'Мониторинг: лента последних публикаций источника' }, 'Следить'), el('th', null, 'Вкл.'), el('th', null, 'Уровень'), el('th', null, 'Источник'), el('th', null, 'Сайт'), el('th', null, 'Страна'), el('th', null, 'Тип'), el('th', null, 'Языки'), el('th', null, 'Канал'), el('th', null, 'Закладки')));
       for (const s of rows) {
+        const wOn = S.watch.sources.includes(s.id);
+        const wb = el('button', { class: 'eyebtn' + (wOn ? ' on' : ''), title: wOn ? 'В мониторинге — нажмите, чтобы убрать' : 'Добавить в мониторинг' }, icon('eye', wOn));
+        wb.addEventListener('click', () => { toggleWatch({ kind: 'source', id: s.id, name: s.name }); setTimeout(drawTable, 350); });
         const on = el('input', { type: 'checkbox' });
         on.checked = !s.off;
         on.addEventListener('change', () => saveOverride(s, { off: !on.checked }));
         const tierSel = el('select');
         for (const v of [1, 2, 3]) { const o = el('option', { value: String(v) }, C.TIERS[v].code); if (s.tier === v) o.selected = true; tierSel.appendChild(o); }
         tierSel.addEventListener('change', () => saveOverride(s, { tier: Number(tierSel.value) }));
-        t.appendChild(el('tr', null, el('td', null, on), el('td', null, tierSel),
+        t.appendChild(el('tr', null, el('td', null, wb), el('td', null, on), el('td', null, tierSel),
           el('td', null, el('div', null, s.name), s.note ? el('div', { class: 'muted', style: 'font-size:11.5px' }, s.note) : null,
             el('div', { style: 'font-size:11px;margin-top:2px' }, s.state ? el('span', { class: 'tag st' + (s.state === 'public' ? ' public' : '') }, s.state === 'control' ? 'гос.' : 'гос. фин.') : null, ' ',
               s.paywall ? el('span', { class: 'tag pw' }, C.PAYWALL_LABELS[s.paywall]) : null, ' ', s.ca ? el('span', { class: 'tag ca' }, 'Центральная Азия') : null, ' ', s.user ? el('span', { class: 'tag' }, 'добавлен вами') : null)),
@@ -1577,7 +1889,7 @@
     const f = {};
     const inp = (k, ph) => { f[k] = el('input', { class: 'input', placeholder: ph, style: 'width:100%' }); return f[k]; };
     const typeSel = el('select');
-    Object.entries(C.TYPE_LABELS).filter(([k]) => k !== 'unknown').forEach(([k, v]) => typeSel.appendChild(el('option', { value: k }, v)));
+    Object.entries(C.TYPE_LABELS).filter(([k]) => k !== 'unknown' && k !== 'social').forEach(([k, v]) => typeSel.appendChild(el('option', { value: k }, v)));
     const tierSel = el('select');
     [1, 2, 3].forEach((v) => tierSel.appendChild(el('option', { value: String(v) }, C.TIERS[v].label)));
     tierSel.value = '2';
@@ -1705,6 +2017,7 @@
       render();
     });
     p.appendChild(card);
+    if (SERVER) { p.appendChild(socialSettingsCard(s)); p.appendChild(mobileSettingsCard(s)); }
     const tools = el('div', { class: 'card' });
     tools.appendChild(el('h3', null, 'Данные'));
     if (S.boot) {
@@ -1717,6 +2030,113 @@
     hist.addEventListener('click', () => { S.history = []; saveHistory(); toast('История очищена'); });
     tools.append(cc, ' ', hist);
     p.append(el('div', { style: 'margin:0 0 14px' }, save), tools);
+  }
+
+  function keyInput(s, k, ph) {
+    const i = el('input', { class: 'input', type: k === 'gcse_cx' ? 'text' : 'password', placeholder: s[k + '_set'] ? 'задан (' + (s[k] || '') + ') — введите новый, чтобы заменить' : ph, style: 'width:100%;max-width:420px', autocomplete: 'off' });
+    if (k === 'gcse_cx') i.value = s[k] || '';
+    i.dataset.k = k;
+    return i;
+  }
+  function socialSettingsCard(s) {
+    const card = el('div', { class: 'card' });
+    card.appendChild(el('h3', null, 'Соцсети и ключи API'));
+    card.appendChild(el('p', { class: 'muted', style: 'font-size:12.5px' }, 'Результаты из соцсетей показываются отдельно — вкладка «Соцсети» над лентой. Без ключей работают публичные Telegram-каналы. Ключи хранятся только на этом компьютере (data/state/settings.json).'));
+    // Telegram-каналы
+    const chBox = el('div', { class: 'tchips', style: 'margin:6px 0' });
+    const chans = (S.social && S.social.channels) || [];
+    const defaults = new Set((S.social && S.social.default_channels) || []);
+    for (const c of chans) {
+      const rm = el('button', { title: 'Убрать канал' }, '×');
+      rm.addEventListener('click', async () => {
+        const patch = defaults.has(c.id) ? { tg_channels_off: (S.settings.tg_channels_off || []).concat([c.id]) }
+          : { tg_channels_add: (S.settings.tg_channels_add || []).filter((x) => x.id !== c.id) };
+        await saveSettings(patch); await loadSocial(''); renderSettings();
+      });
+      chBox.appendChild(el('span', { class: 'tchip tg', title: 't.me/' + c.id + (c.lang ? ' · ' + c.lang : '') }, (c.name || c.id) + ' @' + c.id, rm));
+    }
+    const chIn = el('input', { class: 'input', placeholder: '@канал или ссылка t.me/…', style: 'width:220px' });
+    const chLang = el('select'); for (const l of ['ru', 'uz', 'en', 'kk', 'tg', 'ky', 'tr', 'fa', 'ar', 'zh']) chLang.appendChild(el('option', { value: l }, l.toUpperCase()));
+    const chAdd = el('button', { class: 'btn small' }, 'Добавить канал');
+    chAdd.addEventListener('click', async () => {
+      const v = chIn.value.trim().replace(/^(https?:\/\/)?(www\.)?(t\.me|telegram\.me)\/(s\/)?/, '').replace(/^@/, '').split(/[/?]/)[0];
+      if (!/^[A-Za-z][A-Za-z0-9_]{3,31}$/.test(v)) { toast('Некорректное имя канала', true); return; }
+      const off = (S.settings.tg_channels_off || []).filter((x) => x.toLowerCase() !== v.toLowerCase());
+      await saveSettings({ tg_channels_add: (S.settings.tg_channels_add || []).filter((x) => x.id !== v).concat([{ id: v, name: '@' + v, lang: chLang.value }]), tg_channels_off: off });
+      await loadSocial(''); renderSettings();
+    });
+    card.append(el('div', { class: 'kv' }, el('label', null, 'Telegram-каналы (публичные)'), el('div', null, chBox, el('div', { class: 'ptool' }, chIn, chLang, chAdd),
+      el('div', { class: 'muted', style: 'font-size:12px' }, 'ОКО ищет по теме внутри каждого канала через веб-версию t.me/s. Закрытые каналы и группы недоступны. Глобальный поиск по всему Telegram — только в приложении Telegram.'))));
+    const kv = el('div', { class: 'kv', style: 'margin-top:12px' });
+    const inputs = [];
+    const add = (label, k, ph, hint) => { const i = keyInput(s, k, ph); inputs.push(i); kv.append(el('label', null, label), i); if (hint) kv.appendChild(el('div', { class: 'hint' }, hint)); };
+    add('ВКонтакте: сервисный ключ', 'vk_token', 'сервисный ключ доступа приложения VK', 'dev.vk.com → «Мои приложения» → создать приложение → «Сервисный ключ доступа». Поиск по открытым записям (newsfeed.search).');
+    add('X (Twitter): Bearer Token', 'x_bearer', 'Bearer Token', 'developer.x.com — поиск доступен в платных тарифах API (Basic и выше), последние 7 дней.');
+    add('Brave Search API: ключ', 'brave_key', 'ключ Brave Search API', 'api-dashboard.search.brave.com — бесплатный тариф (≈2000 запросов в месяц). Ищет публичные публикации LinkedIn, Facebook, Instagram, X, VK, Telegram и WhatsApp-каналы.');
+    add('Google Programmable Search: ключ', 'gcse_key', 'API key', 'Альтернатива Brave: programmablesearchengine.google.com (поисковик по всему вебу) + ключ Custom Search API в console.cloud.google.com; 100 запросов в день бесплатно.');
+    add('Google Programmable Search: cx', 'gcse_cx', 'идентификатор поисковой системы (cx)', '');
+    add('YouTube Data API: ключ', 'youtube_key', 'API key', 'console.cloud.google.com → YouTube Data API v3 → ключ (бесплатная квота).');
+    add('DeepL: ключ (перевод)', 'deepl_key', 'ключ DeepL API (…:fx — бесплатный)', 'Необязательно: более качественный перевод статей на русский. Без ключа используется Google Переводчик.');
+    card.appendChild(kv);
+    const plats = el('div', { class: 'ptool' });
+    const want = new Set(s.social_platforms || ['telegram', 'x', 'linkedin', 'facebook', 'instagram', 'vk', 'whatsapp']);
+    const pcb = {};
+    for (const [pid, pl] of Object.entries((S.social && S.social.platforms) || {})) {
+      if (pid === 'youtube') continue;
+      const cb = el('input', { type: 'checkbox' }); cb.checked = want.has(pid); pcb[pid] = cb;
+      plats.appendChild(el('label', { class: 'check', title: pl.note || '' }, cb, ' ' + pl.name));
+    }
+    card.append(el('div', { class: 'muted', style: 'margin:10px 0 4px' }, 'Платформы для поиска через Brave / Google:'), plats);
+    const save = el('button', { class: 'btn primary' }, 'СОХРАНИТЬ КЛЮЧИ');
+    save.addEventListener('click', async () => {
+      const patch = { social_platforms: Object.entries(pcb).filter(([, cb]) => cb.checked).map(([k]) => k) };
+      for (const i of inputs) { if (i.value.trim() || i.dataset.k === 'gcse_cx') patch[i.dataset.k] = i.value.trim(); }
+      await saveSettings(patch); await loadSocial(''); renderProvMenu(); renderSettings();
+    });
+    const clr = el('button', { class: 'btn small' }, 'Удалить все ключи');
+    clr.addEventListener('click', async () => {
+      if (!confirm('Удалить все сохранённые ключи API?')) return;
+      await saveSettings({ vk_token: '', x_bearer: '', brave_key: '', gcse_key: '', gcse_cx: '', youtube_key: '', deepl_key: '' }); await loadSocial(''); renderSettings();
+    });
+    card.appendChild(el('div', { class: 'ptool', style: 'margin-top:10px' }, save, clr));
+    return card;
+  }
+  function mobileSettingsCard(s) {
+    const card = el('div', { class: 'card' });
+    card.appendChild(el('h3', null, 'Телефон: Telegram-бот и доступ из браузера'));
+    const kv = el('div', { class: 'kv' });
+    const tok = keyInput(s, 'tg_bot_token', 'токен от @BotFather');
+    const ids = el('input', { class: 'input', placeholder: 'ваш Telegram ID (узнать: напишите боту /start)', style: 'width:100%;max-width:420px' });
+    ids.value = (s.tg_bot_allowed || []).join(', ');
+    const topic = el('input', { class: 'input', style: 'width:260px' }); topic.value = s.tg_bot_topic || 'Узбекистан';
+    const dig = el('input', { class: 'input', type: 'time', style: 'width:120px' });
+    const d0 = (s.tg_bot_digest || [])[0]; dig.value = d0 ? d0.time : '';
+    const lan = keyInput(s, 'lan_password', 'пароль для входа с телефона (не короче 8 символов)');
+    kv.append(el('label', null, 'Токен Telegram-бота'), tok, el('div', { class: 'hint' }, 'Создайте бота у @BotFather, вставьте токен. Бот отвечает только разрешённым ID: присылает сводки, ищет по команде, следит за мониторингом.'),
+      el('label', null, 'Разрешённые Telegram ID'), ids,
+      el('label', null, 'Тема по умолчанию'), topic,
+      el('label', null, 'Ежедневная сводка в'), el('div', null, dig, el('span', { class: 'muted' }, ' (пусто — не присылать)')),
+      el('label', null, 'Пароль доступа с телефона'), lan, el('div', { class: 'hint' }, 'Запустите ОКО командой «python oko.py --lan» — интерфейс откроется на телефоне в той же Wi-Fi-сети по адресу, который покажет окно ОКО. Вход по паролю; можно «Добавить на главный экран».'));
+    const st = el('div', { class: 'muted', style: 'font-size:12.5px;margin-top:6px' });
+    api('/api/bot/status').then((b) => { st.textContent = 'Бот: ' + (b.running ? 'работает' + (b.username ? ' (@' + b.username + ')' : '') : (b.error ? 'ошибка — ' + b.error : 'не запущен')) + (b.lan ? ' · доступ с телефона: ' + b.lan : ''); }).catch(() => {});
+    const save = el('button', { class: 'btn primary' }, 'СОХРАНИТЬ');
+    save.addEventListener('click', async () => {
+      const allowed = splitList(ids.value).map((x) => x.replace(/[^0-9-]/g, '')).filter(Boolean).map(Number);
+      const patch = { tg_bot_allowed: allowed, tg_bot_topic: topic.value.trim() || 'Узбекистан', tg_bot_digest: dig.value ? [{ time: dig.value, topic: topic.value.trim() || 'Узбекистан' }] : [] };
+      if (tok.value.trim()) patch.tg_bot_token = tok.value.trim();
+      if (lan.value.trim()) { if (lan.value.trim().length < 8) { toast('Пароль — не короче 8 символов', true); return; } patch.lan_password = lan.value.trim(); }
+      await saveSettings(patch);
+      try { await api('/api/bot/restart', { method: 'POST', body: {} }); } catch (e) { /* бот может быть не настроен */ }
+      renderSettings();
+    });
+    card.append(kv, st, el('div', { class: 'ptool', style: 'margin-top:10px' }, save));
+    card.appendChild(el('p', { class: 'muted', style: 'font-size:12.5px' }, 'Отдельное APK-приложение не требуется: на Android ОКО можно запустить прямо на телефоне через Termux (см. README → «ОКО на телефоне»), либо пользоваться ботом или браузером телефона.'));
+    return card;
+  }
+  async function saveSettings(patch) {
+    if (!SERVER) { Object.assign(S.settings, patch); store.set('settings', S.settings); return; }
+    try { S.settings = await api('/api/settings', { method: 'POST', body: patch }); toast('Сохранено'); }
+    catch (e) { toast('Не сохранено: ' + e.message, true); }
   }
 
   // ================================================================ справка
@@ -1820,13 +2240,324 @@
   }
   function renderExportMenu() {
     const m = clear($('#menuExport'));
-    const name = 'OKO_' + (splitList($('#qTopic').value)[0] || 'monitoring').replace(/[^\p{L}\p{N}]+/gu, '_') + '_' + isoDate(new Date());
+    const name = 'OKO_' + (((S.params && S.params.topics) || [])[0] || (S.params && S.params.mode) || 'monitoring').replace(/[^\p{L}\p{N}]+/gu, '_') + '_' + isoDate(new Date());
     const mi = (label, fn) => { const b = el('button', { class: 'mi' }, label); b.addEventListener('click', () => { m.classList.add('hidden'); fn(); }); return b; };
     m.append(el('div', { class: 'mh' }, 'Текущая выборка (' + visible.length + ')'),
       mi('CSV для Excel', () => download(name + '.csv', toCSV(visible), 'text/csv;charset=utf-8')),
       mi('HTML-отчёт (файл)', () => download(name + '.html', reportHtml(visible, 'Мониторинг: ' + (splitList($('#qTopic').value).join(', ') || '')), 'text/html;charset=utf-8')),
       mi('JSON (все данные)', () => download(name + '.json', JSON.stringify(visible.map((x) => { const y = Object.assign({}, x); delete y.meta; return y; }), null, 1), 'application/json')),
-      el('hr'), mi('Только первоисточники → CSV', () => download(name + '_primary.csv', toCSV(visible.filter((x) => x.origin && x.origin.status === 'primary')), 'text/csv;charset=utf-8')));
+      el('hr'), mi('PDF-сводка (печать / сохранить в PDF)', () => printDigest(visible, (S.params && S.params.title) || ('Мониторинг: ' + ((S.params && S.params.topics) || []).join(', ')))),
+      mi('Только первоисточники → CSV', () => download(name + '_primary.csv', toCSV(visible.filter((x) => x.origin && x.origin.status === 'primary')), 'text/csv;charset=utf-8')));
+  }
+
+  // ================================================================ вкладки запроса
+  const TAB_PH = {
+    topic: 'Страна, регион, организация или явление — например: Узбекистан',
+    keywords: 'Ключевые слова через запятую (любое из них)',
+    person: 'Имя и фамилия — например: Шавкат Мирзиёев',
+    osint: 'e-mail, +998…, @имя, домен, ссылка или IP',
+    reports: 'необязательно: тема для отбора (например, Узбекистан)'
+  };
+  const TAB_DEF = { topic: 'Узбекистан', keywords: '', person: '', osint: '', reports: '' };
+  function switchTab(t) {
+    S.qvals[S.qtab] = $('#qTopic').value;
+    S.qtab = t;
+    store.set('qtab', t);
+    store.set('qvals', S.qvals);
+    $$('#qtabs button').forEach((b) => b.classList.toggle('on', b.dataset.t === t));
+    for (const k of ['topic', 'keywords', 'person', 'osint', 'reports']) $('#qx-' + k).classList.toggle('hidden', k !== t);
+    const v = S.qvals[t] !== undefined ? S.qvals[t] : TAB_DEF[t];
+    $('#qTopic').value = v;
+    $('#qTopic').placeholder = TAB_PH[t];
+    $('#btnSearch').textContent = S.running ? 'ПОИСК…' : (t === 'osint' ? 'ПРОВЕРИТЬ' : 'НАЙТИ');
+    $('#qline').classList.toggle('hidden', t === 'osint');
+    $('#qparams').classList.add('hidden');
+    S.expansion = null;
+    if (t === 'reports') renderReportsBox();
+    if (t === 'person') renderPersonBox();
+    paramsSummary();
+  }
+  function renderThemeChips() {
+    const box = clear($('#themeChips'));
+    const all = (S.boot && S.boot.themes) || (D.lexicon || []).filter((e) => e.kind === 'theme').map((e) => ({ id: e.id, label: e.label }));
+    for (const t of all) {
+      const on = S.themes.has(t.id);
+      const chip = el('span', { class: 'chip theme' + (on ? ' on' : ''), title: on ? 'Убрать направление' : 'Искать только материалы по этому направлению (термины на всех языках)' }, t.label);
+      chip.addEventListener('click', () => {
+        if (S.themes.has(t.id)) S.themes.delete(t.id); else S.themes.add(t.id);
+        store.set('themes', [...S.themes]);
+        S.expansion = null;
+        renderThemeChips();
+      });
+      box.appendChild(chip);
+    }
+    if (S.themes.size) {
+      const clr = el('span', { class: 'chip', title: 'Все направления' }, '× сбросить');
+      clr.addEventListener('click', () => { S.themes.clear(); store.set('themes', []); S.expansion = null; renderThemeChips(); });
+      box.appendChild(clr);
+    }
+    box.appendChild(el('span', { class: 'muted', style: 'font-size:11.5px' }, S.themes.size ? 'материал должен касаться темы и одного из направлений' : 'без выбора — все направления'));
+  }
+  function paramsSummary() {
+    const n = S.langOn.size;
+    const parts = [n + ' ' + plural(n, 'язык', 'языка', 'языков'), S.mode === 'registry' ? 'аналитика и авторитетные' : 'широкий охват'];
+    if (S.minTier < 4) parts.push('уровень ' + { 1: 'A', 2: 'A–B', 3: 'A–C' }[S.minTier]);
+    if (S.types.size) parts.push('категорий: ' + S.types.size);
+    const open = !$('#qparams').classList.contains('hidden');
+    $('#btnParams').textContent = 'Параметры: ' + parts.join(' · ') + (open ? ' ▴' : ' ▾');
+  }
+
+  // ---------------------------------------------------------------- персоны
+  function renderPersonBox() {
+    const box = clear($('#personBox'));
+    if (S.person) {
+      const p = S.person;
+      const card = el('div', { class: 'pcard' });
+      const back = el('button', { class: 'linkbtn' }, '← другой человек');
+      back.addEventListener('click', () => { S.person = null; renderPersonBox(); });
+      card.appendChild(el('div', { class: 'pc-h' }, el('b', null, p.label), p.born ? el('span', { class: 'muted' }, ' · род. ' + p.born) : null, p.died ? el('span', { class: 'muted' }, ' · ум. ' + p.died) : null, ' ', back));
+      if (p.description) card.appendChild(el('div', { class: 'muted' }, p.description));
+      const pos = (p.positions || []).slice().reverse().slice(0, 6);
+      if (pos.length) card.appendChild(el('div', { class: 'pc-row' }, el('span', { class: 'fb-k' }, 'Должности'), el('span', null, pos.map((x) => x.label + (x.from ? ' (' + x.from.slice(0, 4) + (x.to ? '–' + x.to.slice(0, 4) : '–н.в.') + ')' : '')).join('; '))));
+      if ((p.citizenship || []).length) card.appendChild(el('div', { class: 'pc-row' }, el('span', { class: 'fb-k' }, 'Гражданство'), el('span', null, p.citizenship.map((x) => x.label).join(', '))));
+      const links = el('span', { class: 'pc-links' });
+      for (const sx of p.socials || []) links.appendChild(extLink(sx.url, sx.name + ': ' + sx.handle, 'btn small ghost'));
+      for (const w of p.websites || []) links.appendChild(extLink(w, 'сайт: ' + C.hostOf(w), 'btn small ghost'));
+      for (const w of p.wikipedia || []) links.appendChild(extLink(w.url, 'Википедия (' + w.lang + ')', 'btn small ghost'));
+      links.appendChild(extLink(p.wikidata, 'Wikidata ' + p.id, 'btn small ghost'));
+      card.appendChild(el('div', { class: 'pc-row' }, el('span', { class: 'fb-k' }, 'Аккаунты и страницы'), links));
+      const names = Object.entries(p.names || {}).map(([k, v]) => k.toUpperCase() + ': ' + v[0]).slice(0, 14).join(' · ');
+      card.appendChild(el('div', { class: 'pc-row' }, el('span', { class: 'fb-k' }, 'Имя на языках'), el('span', { class: 'muted' }, names)));
+      const go = el('button', { class: 'btn primary small' }, 'ИСКАТЬ УПОМИНАНИЯ');
+      go.addEventListener('click', () => runSearch());
+      card.appendChild(el('div', { class: 'ptool', style: 'margin-top:8px' }, go, el('span', { class: 'muted', style: 'font-size:12px' }, 'СМИ и аналитика на всех выбранных языках + соцсети (вкладка «Соцсети» в результатах)')));
+      box.appendChild(card);
+      return;
+    }
+    if (S.personCands.length) {
+      box.appendChild(el('div', { class: 'muted', style: 'margin-bottom:4px' }, 'Выберите человека:'));
+      for (const c of S.personCands) {
+        const b = el('button', { class: 'pcand' }, el('b', null, c.label), c.born ? el('span', { class: 'muted' }, ' · ' + c.born.slice(0, 4)) : null, c.description ? el('span', { class: 'muted' }, ' — ' + c.description) : null);
+        b.addEventListener('click', () => selectPerson(c.id));
+        box.appendChild(b);
+      }
+      const plain = el('button', { class: 'linkbtn' }, 'Нет в списке — искать имя как ключевое слово');
+      plain.addEventListener('click', () => { S.person = { id: '', label: $('#qTopic').value.trim(), names: {} }; runSearch(); });
+      box.appendChild(plain);
+      return;
+    }
+    box.appendChild(el('span', { class: 'muted' }, 'Введите имя и нажмите «НАЙТИ» — ОКО найдёт человека в Wikidata, покажет должности и аккаунты и соберёт упоминания на всех языках. Только публичные лица и открытые данные.'));
+  }
+  async function personSearch() {
+    const q = $('#qTopic').value.trim();
+    if (q.length < 2) { toast('Введите имя', true); return; }
+    if (!SERVER) { S.person = { id: '', label: q, names: {} }; return runSearch(); }
+    clear($('#personBox')).appendChild(el('span', { class: 'muted' }, el('span', { class: 'spinner' }), ' ищу в Wikidata…'));
+    try {
+      S.personCands = (await api('/api/person/search?q=' + encodeURIComponent(q))).candidates || [];
+      if (!S.personCands.length) { S.person = { id: '', label: q, names: {} }; toast('В Wikidata не найдено — ищу имя как ключевое слово'); return runSearch(); }
+      if (S.personCands.length === 1) return selectPerson(S.personCands[0].id);
+      renderPersonBox();
+    } catch (e) { toast('Wikidata: ' + e.message, true); renderPersonBox(); }
+  }
+  async function selectPerson(qid) {
+    clear($('#personBox')).appendChild(el('span', { class: 'muted' }, el('span', { class: 'spinner' }), ' загружаю профиль…'));
+    try { S.person = await api('/api/person/' + qid); S.expansion = null; renderPersonBox(); }
+    catch (e) { toast('Профиль: ' + e.message, true); renderPersonBox(); }
+  }
+
+  // ---------------------------------------------------------------- OSINT
+  async function osintRun() {
+    const v = $('#qTopic').value.trim();
+    const box = clear($('#osintBox'));
+    if (!v) { toast('Введите e-mail, телефон, @имя, домен, ссылку или IP', true); return; }
+    if (!SERVER) { box.appendChild(el('span', { class: 'muted' }, 'OSINT-проверки работают при запуске ОКО через сервер (START_OKO).')); return; }
+    box.appendChild(el('span', { class: 'muted' }, el('span', { class: 'spinner' }), ' проверяю по открытым источникам…'));
+    let r;
+    try { r = await api('/api/osint', { method: 'POST', body: { value: v } }); } catch (e) { clear(box).appendChild(el('span', { class: 'muted' }, 'Ошибка: ' + e.message)); return; }
+    S.osint = r;
+    renderOsint();
+  }
+  function renderOsint() {
+    const r = S.osint;
+    const box = clear($('#osintBox'));
+    if (!r) return;
+    const TYPE = { email: 'E-mail', phone: 'Телефон', username: 'Имя пользователя', domain: 'Домен', url: 'Ссылка', ip: 'IP-адрес' };
+    box.appendChild(el('div', { class: 'oh' }, el('b', null, (TYPE[r.type] || 'Не распознано') + ': '), el('span', { class: 'mono' }, r.value)));
+    if (r.facts.length) {
+      const t = el('table', { class: 'dtable', style: 'margin:6px 0;width:100%' });
+      for (const f of r.facts) t.appendChild(el('tr', null, el('th', null, f.k), el('td', null, f.v)));
+      box.appendChild(t);
+    }
+    if (r.checks.length) {
+      const ul = el('div', { class: 'ochecks' });
+      const ST = { ok: '✓', found: '●', none: '○', warn: '!', unknown: '?' };
+      for (const c of r.checks) ul.appendChild(el('div', { class: 'oc st-' + c.status }, el('span', { class: 'oc-i' }, ST[c.status] || '·'), el('b', null, c.name), ' ', c.url ? extLink(c.url, c.detail || c.url) : el('span', { class: 'muted' }, c.detail || '')));
+      box.appendChild(ul);
+    }
+    if (r.links.length) {
+      const l = el('div', { class: 'pc-links', style: 'margin-top:6px' });
+      for (const x of r.links) {
+        if (x.url) l.appendChild(extLink(x.url, x.name, 'btn small ghost'));
+        else if (x.hint) { const b = el('button', { class: 'btn small ghost' }, x.name); b.addEventListener('click', () => { $('#qTopic').value = '@' + x.hint; osintRun(); }); l.appendChild(b); }
+      }
+      box.appendChild(l);
+    }
+    for (const n of r.notes || []) box.appendChild(el('div', { class: 'muted', style: 'font-size:12px;margin-top:6px' }, n));
+    box.appendChild(el('div', { class: 'muted', style: 'font-size:11.5px;margin-top:6px' }, 'Только открытые данные. ОКО не использует утечки баз, «пробив» и сервисы раскрытия владельцев номеров.'));
+  }
+
+  // ---------------------------------------------------------------- доклады
+  async function loadCatalog() {
+    if (S.catalog || !SERVER) return S.catalog;
+    try { S.catalog = await api('/api/catalog/reports'); } catch (e) { S.catalog = null; }
+    return S.catalog;
+  }
+  async function renderReportsBox() {
+    const box = clear($('#reportsBox'));
+    box.appendChild(el('label', { class: 'check', title: 'Показывать только выпуски и новости, где упоминается тема из строки поиска' }, el('input', { type: 'checkbox', id: 'optReportTopic' }), ' только упоминающие тему'));
+    const cat = await loadCatalog();
+    if (!cat) { box.appendChild(el('div', { class: 'muted' }, 'Каталог докладов доступен при работе через сервер.')); return; }
+    const m = new Date().getMonth() + 1, nm = m % 12 + 1;
+    const MONTH = ['', 'январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'];
+    const MONTH_P = ['', 'январе', 'феврале', 'марте', 'апреле', 'мае', 'июне', 'июле', 'августе', 'сентябре', 'октябре', 'ноябре', 'декабре'];
+    const soon = cat.reports.filter((r) => (r.months || []).includes(m) || (r.months || []).includes(nm));
+    const cal = el('div', { class: 'rcal' });
+    for (const r of soon) cal.appendChild(el('span', { class: 'rchip' + (r.rank ? ' rank' : ''), title: r.cadence + (r.rank ? ' · есть рейтинг/оценка стран' : '') }, extLink(r.url, r.name)));
+    cal.appendChild(el('div', { class: 'muted', style: 'font-size:11.5px' }, 'по датам прошлых выпусков; золотая рамка — доклад с рейтингом стран'));
+    box.appendChild(dsec('Ожидаются в ' + MONTH_P[m] + ' — ' + MONTH_P[nm] + ' · ' + soon.length, cal, true, 'repsoon'));
+    const all = el('div');
+    for (const [g, label] of Object.entries(cat.groups)) {
+      const list = cat.reports.filter((r) => r.group === g);
+      const ul = el('div', { class: 'rlist' });
+      for (const r of list) ul.appendChild(el('div', null, extLink(r.url, r.name), el('span', { class: 'muted' }, ' · ' + r.cadence + (r.months && r.months.length ? ' · обычно: ' + r.months.map((x) => MONTH[x].slice(0, 3)).join(', ') : '') + (r.rank ? ' · рейтинг' : ''))));
+      all.appendChild(dsec(label + ' · ' + list.length, ul, false, 'rep_' + g));
+    }
+    box.appendChild(dsec('Каталог: ' + cat.reports.length + ' докладов и индексов', all, false, 'repcat'));
+    box.appendChild(el('div', { class: 'muted', style: 'font-size:12px;margin-top:4px' }, '«НАЙТИ» — новые выпуски за выбранный период: новости о выходе докладов (Google News), публикации организаций-авторов на их сайтах и в лентах.'));
+  }
+
+  // ---------------------------------------------------------------- мониторинг
+  function renderWatchPanel() {
+    const box = clear($('#watchChips'));
+    const n = S.watch.sources.length + S.watch.channels.length;
+    if (!n) box.appendChild(el('span', { class: 'muted' }, 'Список пуст. Добавьте источники: кнопка ниже, значок «глаз» в разделе «Источники» или «Следить за источником» в карточке материала.'));
+    for (const id of S.watch.sources) {
+      const src = S.registry.byId.get(id);
+      const rm = el('button', { title: 'Не следить' }, '×');
+      rm.addEventListener('click', () => toggleWatch({ kind: 'source', id, name: src ? src.name : id }, false));
+      box.appendChild(el('span', { class: 'tchip', title: src ? src.domains[0] : id }, src ? src.name : id, rm));
+    }
+    for (const c of S.watch.channels) {
+      const rm = el('button', { title: 'Не следить' }, '×');
+      rm.addEventListener('click', () => toggleWatch({ kind: 'channel', id: c.id, name: c.name }, false));
+      box.appendChild(el('span', { class: 'tchip tg', title: 'Telegram: t.me/' + c.id }, 'TG · ' + (c.name || c.id), rm));
+    }
+    $$('#watchPresets button').forEach((b) => b.classList.toggle('on', b.dataset.p === (S.watchPreset || '24h')));
+    const last = S.done && S.params && S.params.mode === 'watch' ? 'обновлено ' + fmtDate(Math.floor((S.started || Date.now()) / 1000)) : '';
+    $('#watchHint').textContent = last;
+  }
+  function watchAddModal() {
+    const body = el('div');
+    const q = el('input', { class: 'input', placeholder: 'Название или сайт источника из реестра…', style: 'width:100%' });
+    const res = el('div', { class: 'wpick' });
+    const tg = el('input', { class: 'input', placeholder: '@канал или t.me/канал', style: 'width:100%' });
+    body.append(el('div', { class: 'muted', style: 'margin-bottom:4px' }, 'Источник из реестра ОКО:'), q, res,
+      el('div', { class: 'muted', style: 'margin:12px 0 4px' }, 'Публичный Telegram-канал:'), tg,
+      el('div', { class: 'muted', style: 'font-size:12px;margin-top:8px' }, 'Нет нужного сайта в реестре? Добавьте его в разделе «Источники» → «Добавить источник», затем отметьте здесь.'));
+    const draw = () => {
+      clear(res);
+      const nq = C.normText(q.value);
+      if (nq.length < 2) return;
+      S.sources.filter((sx) => C.normText(sx.name + ' ' + sx.domains.join(' ')).includes(nq)).slice(0, 12).forEach((sx) => {
+        const on = S.watch.sources.includes(sx.id);
+        const b = el('button', { class: 'pcand' + (on ? ' on' : '') }, (on ? '✓ ' : '+ ') + sx.name, el('span', { class: 'muted' }, ' · ' + sx.domains[0] + ' · ' + (C.TIERS[sx.tier] || C.TIERS[4]).code));
+        b.addEventListener('click', () => { toggleWatch({ kind: 'source', id: sx.id, name: sx.name }); setTimeout(draw, 350); });
+        res.appendChild(b);
+      });
+    };
+    q.addEventListener('input', debounce(draw, 150));
+    modal('Добавить в мониторинг', body, () => {
+      const v = tg.value.trim().replace(/^(https?:\/\/)?(www\.)?(t\.me|telegram\.me)\/(s\/)?/, '').replace(/^@/, '').split(/[/?]/)[0];
+      if (v) {
+        if (!/^[A-Za-z][A-Za-z0-9_]{3,31}$/.test(v)) { toast('Некорректное имя канала', true); return false; }
+        toggleWatch({ kind: 'channel', id: v, name: '@' + v }, true);
+      }
+      return true;
+    }, 'Готово');
+    setTimeout(() => q.focus(), 50);
+  }
+  async function runWatch() {
+    if (S.running) { toast('Дождитесь завершения текущего поиска', true); return; }
+    if (!SERVER) { toast('Мониторинг работает при запуске ОКО через сервер', true); return; }
+    if (!S.watch.sources.length && !S.watch.channels.length) { watchAddModal(); return; }
+    const preset = S.watchPreset || '24h';
+    const [a, b] = presetRange(preset);
+    const filter = splitList($('#watchFilter').value);
+    S.running = true;
+    setRunningUI(true);
+    S.items.clear(); S.meta.clear(); S.tasks.clear(); S.notes = []; S.stats = {}; S.selected = null; S.done = null; S.shown = 150;
+    renderDetail(null);
+    renderProgress('Опрашиваю источники мониторинга…');
+    render();
+    try {
+      let plan = {}, origins = {};
+      if (filter.length) {
+        const exp = await api('/api/expand', { method: 'POST', body: { topics: filter, context: [], exclude: [], langs: [...S.langOn], related: false } });
+        plan = exp.plan; origins = exp.origins;
+      }
+      const params = { mode: 'watch', title: 'Мониторинг источников', topics: filter, context: [], exclude: [], langs: [...S.langOn], plan, origins,
+        sources: S.watch.sources, channels: S.watch.channels, t_from: Math.floor(a.getTime() / 1000), t_to: Math.floor(b.getTime() / 1000),
+        tz_offset: -new Date().getTimezoneOffset() };
+      S.params = params;
+      S.started = Date.now();
+      await streamSearch(params, 'watch');
+    } catch (e) { if (e.name !== 'AbortError') toast('Мониторинг: ' + e.message, true); }
+    finally {
+      S.running = false;
+      setRunningUI(false);
+      if (S.wsName === 'watch') { recompute(true); renderProgress(); renderWatchPanel(); }
+    }
+  }
+
+  // ---------------------------------------------------------------- вид ленты, заголовки по-русски
+  function renderViewMenu() {
+    const m = clear($('#menuView'));
+    m.appendChild(el('div', { class: 'mh' }, 'Сортировка'));
+    for (const [v, l] of [['authority', 'по авторитетности'], ['date', 'по дате (новые выше)'], ['relevance', 'по релевантности']]) {
+      const b = el('button', { class: 'mi' + (S.sort === v ? ' on' : '') }, (S.sort === v ? '● ' : '○ ') + l);
+      b.addEventListener('click', () => { S.sort = v; store.set('sort', v); m.classList.add('hidden'); applyFilters(); render(); });
+      m.appendChild(b);
+    }
+    m.appendChild(el('hr'));
+    m.appendChild(el('div', { class: 'mh' }, 'Группировка'));
+    for (const [v, l] of [['list', 'Лента'], ['stories', 'Сюжеты (кто первым)'], ['tiers', 'По уровням авторитетности'], ['sources', 'По источникам']]) {
+      const b = el('button', { class: 'mi' + (S.view === v ? ' on' : '') }, (S.view === v ? '● ' : '○ ') + l);
+      b.addEventListener('click', () => { S.view = v; if (S.wsName === 'main') store.set('view', v); m.classList.add('hidden'); renderList(); });
+      m.appendChild(b);
+    }
+    m.appendChild(el('hr'));
+    const d = el('input', { type: 'checkbox' }); d.checked = S.density === 'full';
+    d.addEventListener('change', () => { S.density = d.checked ? 'full' : 'compact'; store.set('density', S.density); renderList(); });
+    m.appendChild(el('label', null, d, 'Показывать аннотации в ленте'));
+    const t = el('input', { type: 'checkbox' }); t.checked = S.trTitles; t.disabled = !SERVER;
+    t.addEventListener('change', () => { S.trTitles = t.checked; store.set('trTitles', S.trTitles); renderList(); if (S.trTitles) translateVisibleTitles(); });
+    m.appendChild(el('label', { title: 'Машинный перевод заголовков на русский под оригиналом' }, t, 'Заголовки по-русски'));
+  }
+  let trBusy = false;
+  async function translateVisibleTitles() {
+    if (!S.trTitles || !SERVER || trBusy) return;
+    const need = visible.slice(0, S.shown).filter((x) => x.lang && x.lang !== 'ru' && !S.tr.has(x.id)).slice(0, 40);
+    if (!need.length) return;
+    trBusy = true;
+    need.forEach((x) => S.tr.set(x.id, { loading: true }));
+    try {
+      const r = await api('/api/translate', { method: 'POST', body: { texts: need.map((x) => x.title), to: 'ru' } });
+      need.forEach((x, i) => S.tr.set(x.id, { title: r.texts[i] || '', engine: r.engine, done: true, titleOnly: true }));
+    } catch (e) { need.forEach((x) => S.tr.delete(x.id)); toast('Перевод заголовков: ' + e.message, true); trBusy = false; return; }
+    trBusy = false;
+    renderList();
+    translateVisibleTitles();
   }
 
   // ================================================================ история, баннер, представления
@@ -1852,11 +2583,22 @@
   }
   function showView(v) {
     $$('#topnav button').forEach((b) => b.classList.toggle('active', b.dataset.view === v));
-    const main = v === 'results';
+    const main = v === 'results' || v === 'watch';
+    if (main) switchWs(v === 'watch' ? 'watch' : 'main');
     $('#view-results').classList.toggle('hidden', !main);
-    $('#query').classList.toggle('hidden', !main);
-    if (!main) { $('#progress').classList.add('hidden'); $('#termsPanel').classList.add('hidden'); } else renderProgress();
+    $('#query').classList.toggle('hidden', v !== 'results');
+    $('#watchPanel').classList.toggle('hidden', v !== 'watch');
+    $('#termsPanel').classList.add('hidden');
+    if (!main) $('#progress').classList.add('hidden');
     for (const k of ['dossier', 'archive', 'sources', 'settings', 'help']) $('#view-' + k).classList.toggle('hidden', k !== v);
+    if (main) {
+      $$('#sectSeg button').forEach((x) => x.classList.toggle('on', x.dataset.s === S.section));
+      renderBanner();
+      recompute(true);
+      renderProgress();
+      if (!S.selected) renderDetail(null);
+    }
+    if (v === 'watch') renderWatchPanel();
     if (v === 'dossier') renderDossier();
     if (v === 'archive') renderArchive();
     if (v === 'sources') renderSources();
@@ -1877,7 +2619,11 @@
   document.addEventListener('keydown', (e) => {
     const tag = (e.target.tagName || '').toLowerCase();
     const typing = tag === 'input' || tag === 'textarea' || tag === 'select';
-    if (e.key === 'Enter' && ['qTopic', 'qCtx', 'qNot'].includes(e.target.id)) { e.preventDefault(); runSearch(); return; }
+    if (e.key === 'Enter' && ['qTopic', 'qCtx', 'qNot'].includes(e.target.id)) {
+      e.preventDefault();
+      if (S.qtab === 'person' && e.target.id === 'qTopic') { S.person = null; personSearch(); } else runSearch();
+      return;
+    }
     if (typing) return;
     if (e.key === '/') { e.preventDefault(); $('#qTopic').focus(); $('#qTopic').select(); return; }
     if (e.key === 'Escape') { S.selected = null; renderDetail(null); $$('#list .item.sel').forEach((r) => r.classList.remove('sel')); return; }
@@ -1893,6 +2639,10 @@
   function scrollToRow(id) { const r = $('#list .item[data-id="' + CSS.escape(id) + '"]'); if (r) r.scrollIntoView({ block: 'nearest' }); }
 
   // ================================================================ запуск
+  async function loadSocial(q) {
+    if (!SERVER) return;
+    try { S.social = await api('/api/social' + (q ? '?q=' + encodeURIComponent(q) : '')); } catch (e) { /* не критично */ }
+  }
   async function init() {
     S.langOn = new Set(store.get('langs', null) || S.languages.filter((l) => l.core || l.default).map((l) => l.code));
     S.mode = store.get('mode', 'registry');
@@ -1900,8 +2650,14 @@
     S.types = new Set(store.get('types', []));
     S.sort = store.get('sort', 'authority');
     S.view = store.get('view', 'list');
-    S.density = store.get('density', 'full');
+    S.density = store.get('density', 'compact');
     S.strict = store.get('strict', true);
+    S.trTitles = store.get('trTitles', false);
+    S.themes = new Set(store.get('themes', []));
+    S.qvals = store.get('qvals', {});
+    S.facetOpen = new Set(store.get('facetOpen', ['tier', 'origin', 'kw', 'rel', 'platform']));
+    S.watch = store.get('watch', { sources: [], channels: [] });
+    S.watchPreset = store.get('watchPreset', '24h');
     S.history = store.get('history', []);
     S.settings = store.get('settings', {});
     for (const d of store.get('dossier', [])) if (d && d.item) S.dossier.set(d.item.id, d);
@@ -1917,32 +2673,54 @@
         if (Array.isArray(dos)) { S.dossier.clear(); for (const d of dos) if (d && d.item) S.dossier.set(d.item.id, d); }
         const hist = await api('/api/state/history');
         if (Array.isArray(hist) && hist.length) S.history = hist;
+        const w = await api('/api/state/watch');
+        if (w && Array.isArray(w.sources)) S.watch = { sources: w.sources, channels: w.channels || [] };
+        loadSocial('');
+        loadCatalog();
       } catch (e) { toast('Нет связи с сервером ОКО: ' + e.message, true); }
     }
-    const provDefault = ((S.boot && S.boot.providers) || []).filter((p) => p.default).map((p) => p.id);
+    const provs = (S.boot && S.boot.providers) || [];
+    const provDefault = provs.filter((p) => p.default).map((p) => p.id);
+    const known = new Set(store.get('providersKnown', []));
     S.providers = new Set(store.get('providers', null) || provDefault);
+    for (const p of provs) if (!known.has(p.id) && p.default) S.providers.add(p.id);  // новые каналы включаются сами
+    store.set('providersKnown', provs.map((p) => p.id));
+    store.set('providers', [...S.providers]);
     if (!S.langOn.size) S.langOn = new Set(S.languages.filter((l) => l.core).map((l) => l.code));
+    S.wsStore.watch = freshWs('watch');
     renderStatus();
     renderBanner();
     renderLangChips();
+    renderThemeChips();
     renderTypesMenu(); updateTypesBtn();
     renderProvMenu();
     setPreset(store.get('preset', '7d'));
     const lastQ = store.get('lastQuery', null);
-    if (lastQ) { $('#qTopic').value = lastQ.topics || 'Узбекистан'; $('#qCtx').value = lastQ.context || ''; $('#qNot').value = lastQ.exclude || ''; }
+    if (lastQ) { $('#qCtx').value = lastQ.context || ''; $('#qNot').value = lastQ.exclude || ''; }
+    if (!S.qvals.topic && lastQ && lastQ.topics) S.qvals.topic = lastQ.topics;
+    S.qtab = 'topic';
+    $('#qTopic').value = S.qvals.topic !== undefined ? S.qvals.topic : 'Узбекистан';
+    const tab0 = store.get('qtab', 'topic');
+    if (tab0 !== 'topic') switchTab(tab0);
     $$('#modeSeg button').forEach((b) => b.classList.toggle('on', b.dataset.m === S.mode));
     $('#minTier').value = String(S.minTier);
-    $('#sortSel').value = S.sort;
-    $$('#viewSeg button').forEach((b) => b.classList.toggle('on', b.dataset.v === S.view));
     updateDossierCount();
+    updateWatchCount();
+    paramsSummary();
 
     // обработчики
     $('#btnSearch').addEventListener('click', runSearch);
     $('#btnStop').addEventListener('click', stopSearch);
+    $$('#qtabs button').forEach((b) => b.addEventListener('click', () => switchTab(b.dataset.t)));
+    $('#qTopic').addEventListener('input', () => { if (S.qtab === 'person' && S.person && $('#qTopic').value.trim() !== S.person.label) { S.person = null; S.personCands = []; renderPersonBox(); } });
     $$('#presets button').forEach((b) => b.addEventListener('click', () => setPreset(b.dataset.p)));
     $('#dFrom').addEventListener('change', customRange);
     $('#dTo').addEventListener('change', customRange);
-    for (const id of ['qTopic', 'qCtx', 'qNot']) $('#' + id).addEventListener('change', () => store.set('lastQuery', { topics: $('#qTopic').value, context: $('#qCtx').value, exclude: $('#qNot').value }));
+    for (const id of ['qTopic', 'qCtx', 'qNot']) $('#' + id).addEventListener('change', () => {
+      S.qvals[S.qtab] = $('#qTopic').value; store.set('qvals', S.qvals);
+      store.set('lastQuery', { topics: S.qvals.topic || '', context: $('#qCtx').value, exclude: $('#qNot').value });
+    });
+    $('#btnParams').addEventListener('click', () => { $('#qparams').classList.toggle('hidden'); paramsSummary(); });
     $('#btnTerms').addEventListener('click', async () => {
       const panel = $('#termsPanel');
       if (!panel.classList.contains('hidden')) { panel.classList.add('hidden'); return; }
@@ -1954,24 +2732,23 @@
     $$('#modeSeg button').forEach((b) => b.addEventListener('click', () => {
       S.mode = b.dataset.m; store.set('mode', S.mode);
       $$('#modeSeg button').forEach((x) => x.classList.toggle('on', x === b));
-      S.shown = 150; applyFilters(); render();
+      S.shown = 150; applyFilters(); render(); paramsSummary();
     }));
-    $('#minTier').addEventListener('change', () => { S.minTier = Number($('#minTier').value); store.set('minTier', S.minTier); applyFilters(); render(); });
+    $('#minTier').addEventListener('change', () => { S.minTier = Number($('#minTier').value); store.set('minTier', S.minTier); applyFilters(); render(); paramsSummary(); });
     $('#btnTypes').addEventListener('click', (e) => { e.stopPropagation(); toggleMenu(e.target, $('#menuTypes')); });
     $('#btnProv').addEventListener('click', (e) => { e.stopPropagation(); toggleMenu(e.target, $('#menuProv')); });
     $('#btnExport').addEventListener('click', (e) => { e.stopPropagation(); renderExportMenu(); toggleMenu(e.target, $('#menuExport')); });
-    $('#btnDigest').addEventListener('click', () => printDigest(visible, 'Мониторинг: ' + splitList($('#qTopic').value).join(', ')));
-    $('#sortSel').addEventListener('change', () => { S.sort = $('#sortSel').value; store.set('sort', S.sort); applyFilters(); render(); });
-    $$('#viewSeg button').forEach((b) => b.addEventListener('click', () => {
-      S.view = b.dataset.v; store.set('view', S.view);
-      $$('#viewSeg button').forEach((x) => x.classList.toggle('on', x === b));
-      renderList();
-    }));
+    $('#btnView').addEventListener('click', (e) => { e.stopPropagation(); renderViewMenu(); toggleMenu(e.target, $('#menuView')); });
+    $$('#sectSeg button').forEach((b) => b.addEventListener('click', () => setSection(b.dataset.s)));
     $('#optStrict').checked = S.strict;
     $('#optStrict').addEventListener('change', () => setStrict($('#optStrict').checked));
     $('#rFilter').addEventListener('input', debounce(() => { S.text = $('#rFilter').value.trim(); S.shown = 150; applyFilters(); render(); }, 250));
     $('#btnFacets').addEventListener('click', () => $('#facets').classList.toggle('closed'));
     $$('#topnav button').forEach((b) => b.addEventListener('click', () => showView(b.dataset.view)));
+    $('#btnWatchAdd').addEventListener('click', watchAddModal);
+    $('#btnWatchRun').addEventListener('click', runWatch);
+    $('#watchFilter').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); runWatch(); } });
+    $$('#watchPresets button').forEach((b) => b.addEventListener('click', () => { S.watchPreset = b.dataset.p; store.set('watchPreset', S.watchPreset); renderWatchPanel(); }));
     if (window.matchMedia('(max-width: 800px)').matches) $('#facets').classList.add('closed');
     render();
     renderDetail(null);

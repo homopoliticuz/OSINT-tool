@@ -29,6 +29,8 @@ from http.server import ThreadingHTTPServer  # noqa: E402
 def free_port(preferred: int) -> int:
     for port in [preferred] + list(range(preferred + 1, preferred + 40)):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            if os.name != "nt":  # как у самого сервера: порт после недавнего перезапуска (TIME_WAIT) свободен
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             try:
                 s.bind(("127.0.0.1", port))
                 return port

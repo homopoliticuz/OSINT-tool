@@ -4,8 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="oko-token" content="">
+<meta name="theme-color" content="#090c11">
 <title>ОКО — мониторинг аналитических источников</title>
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="manifest" href="assets/manifest.webmanifest">
+<link rel="apple-touch-icon" href="assets/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Noto+Naskh+Arabic:wght@400;600&family=Noto+Nastaliq+Urdu&family=Noto+Sans+Devanagari&family=Noto+Sans+Hebrew&family=Noto+Sans+JP:wght@400;500&family=Noto+Sans+KR:wght@400;500&family=Noto+Sans+SC:wght@400;500&family=Noto+Sans+TC:wght@400;500&display=swap">
@@ -20,8 +23,9 @@
   </div>
   <div class="status" id="status"><span class="dot"></span><span>подключение…</span></div>
   <nav class="topnav" id="topnav">
-    <button data-view="results" class="active">Лента</button>
-    <button data-view="dossier">Досье <span class="badge" id="dossierCount">0</span></button>
+    <button data-view="results" class="active">Поиск</button>
+    <button data-view="watch" title="Лента выбранных источников и каналов">Мониторинг <span class="badge" id="watchCount">0</span></button>
+    <button data-view="dossier" title="Избранные материалы с заметками">Досье <span class="badge" id="dossierCount">0</span></button>
     <button data-view="archive">Архив</button>
     <button data-view="sources">Источники</button>
     <button data-view="settings">Настройки</button>
@@ -32,38 +36,78 @@
 <div id="banner"></div>
 
 <section class="query" id="query">
-  <div class="qrow">
-    <div class="field"><span>Тема</span><input id="qTopic" autocomplete="off" spellcheck="false" placeholder="Узбекистан" value="Узбекистан" title="Ключевое слово или фраза на любом языке. Несколько тем — через запятую (ИЛИ)"></div>
-    <div class="field"><span>и</span><input id="qCtx" autocomplete="off" spellcheck="false" placeholder="контекст: газ, Китай…" title="Уточнение: материал должен касаться также этого (И). Через запятую — любое из"></div>
-    <div class="field"><span>не</span><input id="qNot" autocomplete="off" spellcheck="false" placeholder="исключить…" title="Исключить материалы с этими словами"></div>
+  <div class="qtabs" id="qtabs" role="tablist">
+    <button data-t="topic" class="on" title="Страна, регион, организация или явление + тематические направления">Тематика</button>
+    <button data-t="keywords" title="Произвольные ключевые слова с условиями «и» / «не»">Ключевые слова</button>
+    <button data-t="person" title="Упоминания конкретного человека на всех языках, его должности и аккаунты">Персоны</button>
+    <button data-t="osint" title="Анализ e-mail, телефона, имени пользователя, домена, ссылки или IP по открытым данным">OSINT</button>
+    <button data-t="reports" title="Новые глобальные доклады и индексы международных организаций">Доклады</button>
+  </div>
+  <div class="qbox">
+    <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M7 12.2A5.2 5.2 0 107 1.8a5.2 5.2 0 000 10.4zM10.8 10.8l3.6 3.6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+    <input id="qTopic" autocomplete="off" spellcheck="false" placeholder="Узбекистан" value="Узбекистан" title="Enter — найти">
     <button class="btn primary" id="btnSearch" title="Enter">НАЙТИ</button>
-    <button class="btn danger hidden" id="btnStop">Остановить</button>
+    <button class="btn danger hidden" id="btnStop">Стоп</button>
   </div>
-  <div class="qrow">
-    <span class="qlabel">Период</span>
+
+  <div class="qx" id="qx-topic">
+    <span class="qlabel">Направления</span>
+    <div class="chips" id="themeChips"></div>
+  </div>
+  <div class="qx hidden" id="qx-keywords">
+    <div class="field"><span>и</span><input id="qCtx" autocomplete="off" spellcheck="false" placeholder="также должно быть: газ, Китай…" title="Материал должен содержать и это слово (любое из перечисленных через запятую)"></div>
+    <div class="field"><span>не</span><input id="qNot" autocomplete="off" spellcheck="false" placeholder="исключить…" title="Исключить материалы с этими словами"></div>
+    <label class="check" title="Искать фразу целиком, без перевода по частям"><input type="checkbox" id="optExact"> точная фраза</label>
+    <label class="check" title="Переводить ключевые слова на выбранные языки"><input type="checkbox" id="optTranslate" checked> переводить на языки</label>
+  </div>
+  <div class="qx hidden" id="qx-person"><div id="personBox" class="personbox"><span class="muted">Введите имя и нажмите «НАЙТИ» — ОКО найдёт человека в Wikidata, покажет должности и аккаунты и соберёт упоминания на всех языках.</span></div></div>
+  <div class="qx hidden" id="qx-osint"><div id="osintBox" class="osintbox"><span class="muted">E-mail, номер телефона, @имя пользователя, домен, ссылка или IP-адрес. Только открытые данные: DNS, WHOIS (RDAP), публичные профили, веб-архив, упоминания в поисковиках.</span></div></div>
+  <div class="qx hidden" id="qx-reports"><div id="reportsBox" class="reportsbox"></div></div>
+
+  <div class="qline" id="qline">
     <div class="seg" id="presets">
-      <button data-p="today">Сегодня</button><button data-p="yesterday">Вчера</button><button data-p="24h">24 ч</button><button data-p="3d">3 дня</button><button data-p="7d">Неделя</button><button data-p="30d">Месяц</button>
+      <button data-p="today">Сегодня</button><button data-p="24h">24 ч</button><button data-p="3d">3 дня</button><button data-p="7d">Неделя</button><button data-p="30d">Месяц</button><button data-p="custom" title="Свой период">…</button>
     </div>
-    <input type="date" id="dFrom" title="Начало периода"><span class="muted">—</span><input type="date" id="dTo" title="Конец периода">
+    <span class="custom-dates hidden" id="customDates"><input type="date" id="dFrom" title="Начало периода"><span class="muted">—</span><input type="date" id="dTo" title="Конец периода"></span>
     <span class="muted" id="periodHint"></span>
+    <button class="linkbtn" id="btnParams" title="Языки, источники, уровни, каналы поиска">Параметры ▾</button>
   </div>
-  <div class="qrow">
-    <span class="qlabel">Языки</span>
-    <div class="chips" id="langChips"></div>
-    <button class="btn small ghost" id="btnTerms" title="Показать и отредактировать поисковые термины по языкам">Термины ▾</button>
-    <label class="check" title="Добавлять столицу, главу государства и ключевые города (для тем из словаря)"><input type="checkbox" id="optRelated" checked> связанные термины</label>
-  </div>
-  <div class="qrow">
-    <span class="qlabel">Источники</span>
-    <div class="seg" id="modeSeg">
-      <button data-m="registry" class="on" title="Только аналитические центры, международные организации, официальные источники и издания из реестра">Аналитика и авторитетные издания</button>
-      <button data-m="broad" title="Все найденные материалы, включая источники вне реестра (уровень D)">Широкий охват</button>
+  <div class="qparams hidden" id="qparams">
+    <div class="qrow">
+      <span class="qlabel">Языки</span>
+      <div class="chips" id="langChips"></div>
     </div>
-    <label class="check">уровень
-      <select id="minTier"><option value="4">все</option><option value="3">A–C</option><option value="2">A–B</option><option value="1">только A</option></select>
-    </label>
-    <div class="dropdown"><button class="btn small" id="btnTypes">Категории: все ▾</button><div class="menu hidden" id="menuTypes"></div></div>
-    <div class="dropdown"><button class="btn small" id="btnProv">Каналы поиска ▾</button><div class="menu hidden" id="menuProv"></div></div>
+    <div class="qrow">
+      <span class="qlabel">Термины</span>
+      <button class="btn small ghost" id="btnTerms" title="Показать и отредактировать поисковые термины по языкам">Показать термины по языкам ▾</button>
+      <label class="check" title="Добавлять столицу, главу государства и ключевые города (для тем из словаря)"><input type="checkbox" id="optRelated" checked> связанные термины</label>
+    </div>
+    <div class="qrow">
+      <span class="qlabel">Источники</span>
+      <div class="seg" id="modeSeg">
+        <button data-m="registry" class="on" title="Только аналитические центры, международные организации, официальные источники и издания из реестра">Аналитика и авторитетные издания</button>
+        <button data-m="broad" title="Все найденные материалы, включая источники вне реестра (уровень D)">Широкий охват</button>
+      </div>
+      <label class="check">уровень
+        <select id="minTier"><option value="4">все</option><option value="3">A–C</option><option value="2">A–B</option><option value="1">только A</option></select>
+      </label>
+      <div class="dropdown"><button class="btn small" id="btnTypes">Категории: все ▾</button><div class="menu hidden" id="menuTypes"></div></div>
+      <div class="dropdown"><button class="btn small" id="btnProv">Каналы поиска ▾</button><div class="menu hidden" id="menuProv"></div></div>
+    </div>
+  </div>
+</section>
+
+<section class="query hidden" id="watchPanel">
+  <div class="wtop">
+    <h3>Мониторинг источников</h3>
+    <div class="chips" id="watchChips"></div>
+    <button class="btn small" id="btnWatchAdd">+ Добавить источник или канал</button>
+  </div>
+  <div class="qline">
+    <div class="seg" id="watchPresets"><button data-p="24h">24 ч</button><button data-p="3d">3 дня</button><button data-p="7d">Неделя</button></div>
+    <div class="field wfilter"><span>фильтр</span><input id="watchFilter" autocomplete="off" placeholder="необязательно: слово или тема"></div>
+    <button class="btn primary" id="btnWatchRun">ОБНОВИТЬ</button>
+    <span class="muted" id="watchHint"></span>
   </div>
 </section>
 
@@ -73,7 +117,7 @@
     <button class="btn small" id="btnReExpand">Перевести заново</button>
     <button class="btn small" id="btnTermsClose">Свернуть</button></div>
   <table class="tterms" id="termsTable"></table>
-  <div class="muted" style="font-size:12px;margin-top:8px">Правка термина сохраняется в глоссарий и используется в следующих поисках. Источник: <span class="srcTag lexicon">словарь</span> <span class="srcTag wikidata">Wikidata</span> <span class="srcTag mt">перевод</span> <span class="srcTag user">вручную</span></div>
+  <div class="muted" style="font-size:12px;margin-top:8px">Правка термина сохраняется в глоссарий и используется в следующих поисках. Источник: <span class="srcTag lexicon">словарь</span> <span class="srcTag wikidata">Wikidata</span> <span class="srcTag mt">перевод</span> <span class="srcTag user">вручную</span> · <span class="tchip rel" style="padding:0 6px">голубым</span> — связанные термины</div>
 </section>
 
 <section class="progress hidden" id="progress">
@@ -88,13 +132,13 @@
   <section class="results">
     <div class="rtool">
       <button class="btn small mob-only" id="btnFacets">Фильтры</button>
+      <div class="seg sect" id="sectSeg"><button data-s="media" class="on" title="СМИ, аналитические центры, организации, официальные источники">Материалы <b id="cntMedia">0</b></button><button data-s="social" title="Telegram, VK, X, LinkedIn, Facebook, Instagram, WhatsApp-каналы, YouTube">Соцсети <b id="cntSocial">0</b></button></div>
       <span class="rcount" id="rcount"></span>
       <label class="check strict" title="Показывать только материалы, где тема (ключевое слово, его перевод или связанный термин) есть в заголовке или аннотации, либо подтверждена проверкой страницы"><input type="checkbox" id="optStrict" checked> Строго по теме</label>
+      <span class="rtool-sp"></span>
       <input class="input rfilter" id="rFilter" placeholder="Поиск по результатам…">
-      <select id="sortSel" title="Сортировка"><option value="authority">по авторитетности</option><option value="date">по дате</option><option value="relevance">по релевантности</option></select>
-      <div class="seg" id="viewSeg"><button data-v="list" class="on">Лента</button><button data-v="stories">Сюжеты</button><button data-v="tiers">По уровням</button></div>
+      <div class="dropdown"><button class="btn small" id="btnView" title="Сортировка, группировка, аннотации, заголовки по-русски">Вид ▾</button><div class="menu right hidden" id="menuView"></div></div>
       <div class="dropdown"><button class="btn small" id="btnExport">Экспорт ▾</button><div class="menu right hidden" id="menuExport"></div></div>
-      <button class="btn small" id="btnDigest" title="Сводка для печати или сохранения в PDF">PDF-сводка</button>
     </div>
     <div class="list" id="list"></div>
   </section>
