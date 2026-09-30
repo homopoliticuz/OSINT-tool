@@ -411,6 +411,12 @@
     try {
       const exp = await expand(false);
       S.stopTerms = collectStopTerms(exp.plan);
+      const untranslated = untranslatedLangs(exp);
+      if (untranslated.length) {
+        const msg = 'Перевод не получен для: ' + untranslated.join(', ') + ' — используется исходное написание. Проверьте «Термины».';
+        S.notes.push(msg);
+        toast(msg, true);
+      }
       const params = {
         topics: q.topics, context: q.context, exclude: q.exclude, langs: [...S.langOn], plan: exp.plan,
         t_from: Math.floor(a.getTime() / 1000), t_to: Math.floor(b.getTime() / 1000), tz_offset: -new Date().getTimezoneOffset(),
@@ -430,6 +436,18 @@
       renderProgress();
       if (S.items.size && SERVER) startAutoCheck();
     }
+  }
+  function untranslatedLangs(exp) {
+    const out = new Set();
+    for (const part of [exp.topics || [], exp.context || [], exp.exclude || []]) {
+      for (const t of part) {
+        const src = /[\u0400-\u04ff]/.test(t.topic) ? 'ru' : null;
+        for (const [code, v] of Object.entries(t.langs || {})) {
+          if (v.src === 'original' && code !== src && code !== 'zh-Hant') out.add(code.toUpperCase());
+        }
+      }
+    }
+    return [...out];
   }
   function collectStopTerms(plan) {
     const out = new Set();
@@ -482,7 +500,7 @@
       S.jobId = d.job;
       S.planInfo = d.providers || [];
       for (const t of d.tasks || []) S.tasks.set(t.key, t);
-      S.notes = (d.notes || []).slice();
+      S.notes = [...new Set(S.notes.concat(d.notes || []))];
       renderProgress();
     } else if (ev === 'task') {
       S.tasks.set(d.key, d);
@@ -493,7 +511,7 @@
     } else if (ev === 'done') {
       S.done = d;
       S.stats = d;
-      if (d.notes) S.notes = d.notes;
+      if (d.notes) S.notes = [...new Set(S.notes.concat(d.notes))];
     } else if (ev === 'error') {
       toast(d.message || 'Ошибка', true);
       S.notes.push(d.message);
