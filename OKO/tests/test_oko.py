@@ -326,6 +326,60 @@ def _free_port():
         return s.getsockname()[1]
 
 
+class TestRateLimit(unittest.TestCase):
+    """Сервис отвечает «слишком часто» (429): пауза и замедление, повтор, затем пауза 10 минут."""
+
+    def setUp(self):
+        import http.server
+        import threading
+        from okolib import net
+        self.plan = []
+        test = self
+
+        class H(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                code = test.plan.pop(0) if test.plan else 200
+                body = b"ok" if code == 200 else b"slow down"
+                self.send_response(code)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *a):
+                pass
+        self.srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
+        threading.Thread(target=self.srv.serve_forever, daemon=True).start()
+        self.url = "http://127.0.0.1:%d/x" % self.srv.server_address[1]
+        net.HOST_RULES["127.0.0.1"] = {"conc": 1, "gap": 0.05, "cool": 0.3, "maxgap": 1}
+        self.addCleanup(net.HOST_RULES.pop, "127.0.0.1", None)
+        self.addCleanup(self.srv.shutdown)
+        self.http = HttpClient(None, allow_private=True)
+
+    def test_cooldown_then_success(self):
+        self.plan = [429]
+        t0 = time.time()
+        r = self.http.get(self.url, retries=2)
+        self.assertEqual(r.body, b"ok")
+        self.assertGreaterEqual(time.time() - t0, 0.25)            # пауза после отказа
+        g = self.http._gates["127.0.0.1"]
+        self.assertEqual(g.fail_streak, 0)
+        self.assertTrue(self.http.recently_limited("127.0.0.1"))
+        self.assertGreater(g.gap, g.base_gap)                       # темп замедлен
+
+    def test_block_after_repeated_limits(self):
+        self.plan = [429] * 10
+        with self.assertRaises(FetchError) as cm:
+            self.http.get(self.url, retries=2)
+        self.assertEqual(cm.exception.status, 429)
+        with self.assertRaises(FetchError) as cm:
+            self.http.get(self.url, retries=2)
+        self.assertIn("10 мин", str(cm.exception))
+        left = len(self.plan)
+        with self.assertRaises(FetchError):
+            self.http.get(self.url, retries=2)                     # на паузе — к серверу не обращается
+        self.assertEqual(len(self.plan), left)
+
+
 class TestHealth(unittest.TestCase):
     def test_classify(self):
         self.assertEqual(classify(FetchError("HTTP 429", 429)), "limit")
@@ -568,6 +622,18 @@ class TestServerIntegration(unittest.TestCase):
         self.assertEqual(by_title["Global Peace Index 2026: Central Asia among most improved regions"]["extra"]["report"], "gpi")
         self.assertNotIn("Celebrity chef opens new restaurant in Paris", by_title)   # не доклад
 
+    def test_social_mode(self):
+        langs = ["ru", "en", "uz"]
+        exp = json.load(self.call("/api/expand", {"topics": ["Узбекистан"], "langs": langs, "related": False}))
+        now = int(time.time())
+        items, done = self._stream({"mode": "social", "topics": ["Узбекистан"], "langs": langs, "plan": exp["plan"],
+                                    "origins": exp["origins"], "providers": ["telegram", "gnews"],
+                                    "t_from": now - 7 * 86400, "t_to": now})
+        self.assertIsNotNone(done)
+        self.assertTrue(items)
+        self.assertTrue(all(it["kind"] == "social" for it in items.values()))   # только соцсети, gnews отброшен
+        self.assertIn("https://t.me/kunuzofficial/90001", {it["url"] for it in items.values()})
+
     def test_watch_mode(self):
         now = int(time.time())
         items, done = self._stream({"mode": "watch", "topics": [], "langs": ["ru", "en", "uz"], "plan": {},
@@ -646,6 +712,14 @@ class TestServerIntegration(unittest.TestCase):
         tr = json.load(self.call("/api/translate", {"texts": ["газ", "газ"], "to": "en"}))
         self.assertEqual(tr["texts"], ["gas", "gas"])          # фикстура переводчика всегда отвечает «gas»
         self.assertEqual(tr["engine"], "Google")
+        # два заголовка — одним пакетным запросом (запасной веб-интерфейс Google)
+        tr = json.load(self.call("/api/translate", {"texts": ["Uzbekistan signs deal", "Tashkent to host summit"],
+                                                    "from": "en"}))
+        self.assertEqual(tr["texts"], ["Узбекистан подписал соглашение", "Ташкент примет саммит"])
+        # три — пакет не совпал по числу, каждый переводится отдельно
+        tr = json.load(self.call("/api/translate", {"texts": ["a", "b", "c"], "from": "en"}))
+        self.assertEqual(tr["texts"], ["gas", "gas", "gas"])
+        self.assertEqual(tr["failed"], 0)
         art = json.load(self.call("/api/translate/article", {
             "url": "https://carnegieendowment.org/research/2026/09/central-asia-washington"}))
         self.assertTrue(art["ok"])

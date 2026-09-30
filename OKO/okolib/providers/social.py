@@ -312,7 +312,7 @@ def websocial_tasks(ctx) -> list:
     gkey, gcx = (ctx.settings.get("gcse_key") or "").strip(), (ctx.settings.get("gcse_cx") or "").strip()
     if not brave and not (gkey and gcx) or ctx.watch:
         return []
-    want = ctx.settings.get("social_platforms") or list(platforms())
+    want = list(ctx.platforms) if ctx.platforms else (ctx.settings.get("social_platforms") or list(platforms()))
     terms = _all_main_terms(ctx, ("en", "ru", "uz"))[:3]
     if not terms:
         return []

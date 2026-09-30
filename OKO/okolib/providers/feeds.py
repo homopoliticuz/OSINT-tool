@@ -32,7 +32,14 @@ def rss_tasks(ctx) -> list:
         out.append(Task("rss", "rss:" + s["id"], s["name"], partial(_run_rss, source=s, feeds=feeds),
                         group=s.get("type", ""), meta={"query": "", "terms": [], "source": s["id"]}))
     if pending:
-        ctx.note("Ленты ещё не обнаружены для %d источников — идёт фоновая проверка реестра" % pending)
+        pr = ctx.registry.progress
+        if pr.get("running") and pr.get("total"):
+            ctx.note("Идёт первичная проверка лент источников: %d из %d — ленты остальных %d подключатся сами, "
+                     "пока их материалы ищутся через Google News и GDELT." % (pr["done"], pr["total"], pending))
+        else:
+            ctx.note("Ленты ещё не найдены для %d источников — проверка запустится в фоне; до тех пор их материалы "
+                     "ищутся через Google News и GDELT." % pending)
+            ctx.registry.start_discovery_bg()
     return out
 
 

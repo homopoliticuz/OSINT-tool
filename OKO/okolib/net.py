@@ -43,13 +43,17 @@ DEFAULT_HEADERS = {
 
 # Особые правила для хостов: параллельность и минимальный интервал между запросами.
 HOST_RULES = {
-    "news.google.com": {"conc": 2, "gap": 0.6},
-    "api.gdeltproject.org": {"conc": 1, "gap": 5.3},
-    "www.bing.com": {"conc": 2, "gap": 0.4},
+    # conc — одновременных запросов; gap — пауза между запросами, с; jit — случайная добавка к паузе;
+    # cool — пауза после ответа «слишком часто» (HTTP 429/503), темп при этом замедляется до maxgap
+    "news.google.com": {"conc": 1, "gap": 1.1, "jit": 0.8, "cool": 45, "maxgap": 5},
+    "api.gdeltproject.org": {"conc": 1, "gap": 5.6, "jit": 0.6, "cool": 15, "maxgap": 15},
+    "www.bing.com": {"conc": 1, "gap": 1.3, "jit": 0.7, "cool": 30, "maxgap": 6},
     "www.wikidata.org": {"conc": 4, "gap": 0.05},
-    "translate.googleapis.com": {"conc": 3, "gap": 0.15},
+    "translate.googleapis.com": {"conc": 2, "gap": 0.3, "jit": 0.3, "cool": 20, "maxgap": 3},
+    "clients5.google.com": {"conc": 2, "gap": 0.3, "jit": 0.3, "cool": 20, "maxgap": 3},
     "api.mymemory.translated.net": {"conc": 2, "gap": 0.3},
     "api.openalex.org": {"conc": 2, "gap": 0.2},
+    "t.me": {"conc": 3, "gap": 0.4, "jit": 0.3, "cool": 30, "maxgap": 3},
 }
 DEFAULT_CONC = 3
 
@@ -255,13 +259,18 @@ class FixtureTransport:
 # ---------------------------------------------------------------- клиент
 
 class _HostGate:
-    def __init__(self, conc: int, gap: float):
+    def __init__(self, conc: int, gap: float, jit: float = 0.0, cool: float = 0.0, maxgap: float = 0.0):
         self.sem = threading.Semaphore(conc)
-        self.gap = gap
+        self.gap = self.base_gap = gap
+        self.jit = jit
+        self.cool = cool
+        self.maxgap = maxgap or gap
         self.lock = threading.Lock()
         self.next_at = 0.0
         self.fail_streak = 0
         self.blocked_until = 0.0
+        self.limited_at = 0.0
+        self.limits = 0
 
 
 class HttpClient:
@@ -288,7 +297,8 @@ class HttpClient:
             g = self._gates.get(host)
             if g is None:
                 rule = HOST_RULES.get(host, {})
-                g = _HostGate(rule.get("conc", DEFAULT_CONC), rule.get("gap", 0.0))
+                g = _HostGate(rule.get("conc", DEFAULT_CONC), rule.get("gap", 0.0), rule.get("jit", 0.0),
+                              rule.get("cool", 0.0), rule.get("maxgap", 0.0))
                 self._gates[host] = g
             return g
 
@@ -296,6 +306,28 @@ class HttpClient:
         """Приостановить обращения к хосту (например, после страницы «я не робот»)."""
         g = self._gate(host)
         g.blocked_until = max(g.blocked_until, time.time() + seconds)
+        g.limited_at = time.time()
+        g.limits += 1
+
+    def note_limit(self, host: str) -> bool:
+        """Сервис ответил «слишком часто» в теле ответа (а не кодом 429): та же осторожность, что и для 429.
+        Возвращает True, если сервис поставлен на паузу 10 минут."""
+        g = self._gate(host)
+        g.fail_streak += 1
+        g.limited_at = time.time()
+        g.limits += 1
+        if g.fail_streak >= 3:
+            g.blocked_until = time.time() + 600
+            return True
+        g.gap = min(g.maxgap, max(g.gap, g.base_gap) * 2)
+        with g.lock:
+            g.next_at = max(g.next_at, time.time() + (g.cool or 10) * g.fail_streak)
+        return False
+
+    def recently_limited(self, host: str, within: float = 3600) -> bool:
+        """Ограничивал ли сервис частоту запросов за последнее время (для осторожного темпа)."""
+        g = self._gates.get(host)
+        return bool(g and g.limited_at and time.time() - g.limited_at < within)
 
     def host_blocked(self, host: str) -> float:
         """Сколько секунд хост ещё «на паузе» после серии отказов (0 — доступен)."""
@@ -423,10 +455,18 @@ class HttpClient:
             attempt += 1
             with gate.sem:
                 with gate.lock:
-                    wait = gate.next_at - time.time()
-                    gate.next_at = max(gate.next_at, time.time()) + gate.gap
+                    now = time.time()
+                    wait = gate.next_at - now
+                    gate.next_at = max(gate.next_at, now) + gate.gap + (random.uniform(0, gate.jit) if gate.jit else 0)
                 if wait > 0:
-                    time.sleep(wait)
+                    if cancel is not None:
+                        if cancel.wait(wait):
+                            raise FetchError("отменено", url=url)
+                    else:
+                        time.sleep(wait)
+                if gate.blocked_until > time.time():
+                    raise FetchError("источник временно ограничил запросы, пауза ещё %d с"
+                                     % (gate.blocked_until - time.time()), 429, url)
                 t0 = time.time()
                 try:
                     try:
@@ -444,6 +484,8 @@ class HttpClient:
                         self._host_ssl[host] = ctx
                     self.stats["requests"] += 1
                     gate.fail_streak = 0
+                    if gate.gap > gate.base_gap:  # после замедления темп восстанавливается постепенно
+                        gate.gap = max(gate.base_gap, gate.gap * 0.85)
                     if ttl > 0 and r.status == 200:
                         self._cache_put(key, r)
                     r.elapsed = time.time() - t0
@@ -455,13 +497,32 @@ class HttpClient:
             st = last_err.status
             if st in (429, 503):
                 gate.fail_streak += 1
+                gate.limited_at = time.time()
+                gate.limits += 1
+                if gate.cool:
+                    # сервис просит не спешить: пауза для всех запросов к нему, темп вдвое медленнее,
+                    # одна повторная попытка; после третьего отказа подряд — пауза 10 минут
+                    if gate.fail_streak >= 3:
+                        gate.blocked_until = time.time() + 600
+                        raise FetchError("сервис ограничил частоту запросов (HTTP %s) — пауза 10 мин" % st, st, url)
+                    gate.gap = min(gate.maxgap, max(gate.gap, gate.base_gap) * 2)
+                    ra = last_err.retry_after if last_err.retry_after is not None else gate.cool * gate.fail_streak
+                    with gate.lock:
+                        gate.next_at = max(gate.next_at, time.time() + min(ra, 120))
+                    if attempt >= 2 or (cancel is not None and cancel.is_set()):
+                        break
+                    continue
                 if gate.fail_streak >= 4:
                     gate.blocked_until = time.time() + 600
                     raise FetchError("источник ограничил запросы (HTTP %s), пауза 10 мин" % st, st, url)
                 ra = last_err.retry_after if last_err.retry_after is not None else 2.0 * attempt
                 if ra > 25:
                     break
-                time.sleep(ra + random.uniform(0, 0.6))
+                if cancel is not None:
+                    if cancel.wait(ra + random.uniform(0, 0.6)):
+                        break
+                else:
+                    time.sleep(ra + random.uniform(0, 0.6))
                 continue
             if st is None or st >= 500:
                 time.sleep(0.7 * attempt + random.uniform(0, 0.4))

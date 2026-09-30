@@ -74,7 +74,7 @@ class App:
             except OSError:
                 pass
             if self.state.settings().get("auto_discovery", True):
-                self.registry.run_discovery(only_stale=True, workers=10)
+                self.registry.run_discovery(only_stale=True, workers=16)
         threading.Thread(target=worker, name="oko-discovery", daemon=True).start()
         if not self.fixtures:
             self.bot.start()
@@ -392,7 +392,10 @@ class Handler(BaseHTTPRequestHandler):
         if route == "translate" and method == "POST":
             data = self._body()
             texts = [str(t)[:5000] for t in (data.get("texts") or [])][:120]
-            return self._json(translate.translate_many(app.http, texts, data.get("to") or "ru",
+            src = str(data.get("from") or "auto")
+            if src not in app.languages.by_code and src not in ("zh-Hant", "uk", "kk", "uz", "auto"):
+                src = "auto"
+            return self._json(translate.translate_many(app.http, texts, data.get("to") or "ru", src=src,
                                                        deepl_key=app.state.settings().get("deepl_key", "")))
         if route == "translate/article" and method == "POST":
             return self._json(self._translate_article(str(self._body().get("url") or "")))
@@ -523,8 +526,9 @@ class Handler(BaseHTTPRequestHandler):
                     "url": real}
         key = self.app.state.settings().get("deepl_key", "")
         title = data["meta"].get("title") or ""
-        blocks, engine = translate.translate_blocks(self.app.http, data["blocks"], "ru", key)
-        ttl_tr = translate.translate_one(self.app.http, title, "ru", deepl_key=key)[0] if title else ""
+        src = (data["meta"].get("lang") or "auto").split("-")[0].lower() or "auto"
+        blocks, engine = translate.translate_blocks(self.app.http, data["blocks"], "ru", key, src=src)
+        ttl_tr = translate.translate_one(self.app.http, title, "ru", src, deepl_key=key)[0] if title else ""
         return {"ok": True, "url": real, "title": title, "title_tr": ttl_tr, "blocks": blocks, "engine": engine,
                 "lang": data["meta"].get("lang") or "", "truncated": len(blocks) < len(data["blocks"])}
 

@@ -119,7 +119,11 @@ class Registry:
 
     def needs_discovery(self, s: dict) -> bool:
         d = self.disc(s["id"])
-        return not d or now_ts() - d.get("ts", 0) > DISCOVERY_TTL
+        if not d:
+            return True
+        # недоступный при проверке сайт пробуем снова через сутки, остальные — раз в неделю
+        ttl = 86400 if d.get("status") in ("unreachable", "error") and not d.get("feeds_ok") else DISCOVERY_TTL
+        return now_ts() - d.get("ts", 0) > ttl
 
     def mark_feed(self, sid: str, feed: str, ok: bool):
         with self.lock:
@@ -148,6 +152,15 @@ class Registry:
             else:
                 d["wp_bad"] = 0
             self._disc_dirty = True
+
+    def start_discovery_bg(self):
+        """Запустить фоновую проверку непроверенных источников, если она ещё не идёт."""
+        if self.progress.get("running") or getattr(self, "_disc_bg", 0) > time.time() - 600 or self.http.fixtures:
+            return False
+        self._disc_bg = time.time()
+        threading.Thread(target=self.run_discovery, kwargs={"only_stale": True}, name="oko-discovery-bg",
+                         daemon=True).start()
+        return True
 
     def request_rediscovery(self, sid: str):
         """Поискать новую ленту источника в фоне (не чаще раза в сутки на источник)."""
@@ -185,7 +198,7 @@ class Registry:
         html_text, final = None, base
         for candidate in dict.fromkeys((base, "https://%s/%s" % (host, path))):
             try:
-                r = self.http.get(candidate, timeout=12, retries=1, ttl=6 * 3600, cancel=cancel)
+                r = self.http.get(candidate, timeout=9, retries=1, ttl=6 * 3600, cancel=cancel)
                 html_text, final = r.text(), r.url
                 break
             except FetchError as e:
@@ -201,7 +214,7 @@ class Registry:
         ok = []
         for f in feeds[:5]:
             try:
-                r = self.http.get(f, timeout=10, retries=0, ttl=1800, cancel=cancel)
+                r = self.http.get(f, timeout=7, retries=0, ttl=1800, cancel=cancel)
                 parsed = parse_feed(r.body, r.url, r.charset())
                 if parsed["items"]:
                     ok.append(f)
@@ -229,7 +242,7 @@ class Registry:
             self._disc_dirty = True
         return result
 
-    def run_discovery(self, only_stale: bool = True, ids=None, workers: int = 10,
+    def run_discovery(self, only_stale: bool = True, ids=None, workers: int = 16,
                       cancel: threading.Event | None = None, on_progress=None):
         with self.lock:
             if self.progress["running"]:
@@ -237,6 +250,8 @@ class Registry:
             targets = [s for s in self.sources if not s.get("off")
                        and (ids is None or s["id"] in ids)
                        and (not only_stale or self.needs_discovery(s))]
+            # сначала самые важные: уровень A, аналитические типы, профильные по Центральной Азии
+            targets.sort(key=lambda s: (s.get("tier", 3), s.get("type") not in ANALYTIC_TYPES, not s.get("ca")))
             self.progress = {"running": True, "done": 0, "total": len(targets), "started": time.time()}
 
         def job(s):

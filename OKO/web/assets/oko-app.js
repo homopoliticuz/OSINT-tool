@@ -329,6 +329,7 @@
       return { topics: p ? [p.label] : splitList(v).slice(0, 1), context: [], exclude: [], related: false, persons: p ? { [p.label]: p.id } : {} };
     }
     if (S.qtab === 'reports') return { topics: splitList(v), context: [], exclude: [], related: false };
+    if (S.qtab === 'social') return { topics: splitList(v), context: [], exclude: [], related: false };
     return { topics: splitList(v), context: themeLabels(), exclude: [], related: $('#optRelated').checked };
   }
   async function expand(force) {
@@ -473,7 +474,7 @@
   // объект состояния области: активная — сам S, фоновая — сохранённая копия
   function wsObj(name) { return name === S.wsName ? S : (S.wsStore[name] || (S.wsStore[name] = freshWs(name))); }
 
-  function searchMode() { return S.qtab === 'reports' ? 'reports' : (S.qtab === 'person' ? 'person' : 'topic'); }
+  function searchMode() { return { reports: 'reports', person: 'person', social: 'social' }[S.qtab] || 'topic'; }
 
   async function runSearch() {
     if (S.running) { toast('Дождитесь завершения текущего поиска', true); return; }
@@ -492,9 +493,11 @@
     setRunningUI(true);
     S.items.clear(); S.meta.clear(); S.tasks.clear(); S.notes = []; S.stats = {}; S.selected = null; S.snapshot = null;
     S.done = null; S.shown = 150; S.deep = { queue: [], active: 0, total: 0, done: 0 }; S.openRows = new Set();
+    S.section = mode === 'social' ? 'social' : 'media';
+    $$('#sectSeg button').forEach((x) => x.classList.toggle('on', x.dataset.s === S.section));
     renderBanner();
     renderDetail(null);
-    renderProgress(mode === 'reports' ? 'Готовлю запросы по каталогу докладов…' : 'Подготовка терминов на ' + S.langOn.size + ' языках…');
+    renderProgress(mode === 'reports' ? 'Готовлю запросы по каталогу докладов…' : (mode === 'social' ? 'Опрашиваю соцсети…' : 'Подготовка терминов на ' + S.langOn.size + ' языках…'));
     render();
     try {
       const exp = q.topics.length ? await expand(false) : { plan: {}, topics: [], context: [], origins: {} };
@@ -506,12 +509,15 @@
         toast(msg, true);
       }
       const title = mode === 'reports' ? 'Доклады' + (q.topics.length ? ': ' + q.topics.join(', ') : '') :
-        (mode === 'person' ? 'Персона: ' + q.topics.join(', ') : '');
+        (mode === 'person' ? 'Персона: ' + q.topics.join(', ') : (mode === 'social' ? 'Соцсети: ' + q.topics.join(', ') : ''));
+      const sp = mode === 'social' ? socialProviders() : null;
+      if (sp && !sp.providers.length) throw new Error('не выбрано ни одной доступной платформы');
       const params = {
         mode, title, topics: q.topics, context: q.context, exclude: q.exclude, langs: [...S.langOn], plan: exp.plan,
         origins: exp.origins || termOrigins(exp.topics, exp.context),
         t_from: Math.floor(a.getTime() / 1000), t_to: Math.floor(b.getTime() / 1000), tz_offset: -new Date().getTimezoneOffset(),
-        providers: [...S.providers], types: [...S.types], report_topic: mode === 'reports' && !!($('#optReportTopic') || {}).checked,
+        providers: sp ? sp.providers : [...S.providers], platforms: sp ? sp.platforms : undefined,
+        types: [...S.types], report_topic: mode === 'reports' && !!($('#optReportTopic') || {}).checked,
         person: mode === 'person' && S.person ? { id: S.person.id, label: S.person.label } : undefined
       };
       T.params = params;
@@ -1273,6 +1279,14 @@
     d.appendChild(body);
     return d;
   }
+  // раздел карточки — всегда развёрнут
+  function sect(title, body, cls) {
+    return el('section', { class: 'dsec open' + (cls ? ' ' + cls : '') }, typeof title === 'string' ? el('h4', null, title) : title, body);
+  }
+  function needsTr(it) {
+    if (it.lang) return it.lang !== 'ru';
+    return !/[А-Яа-яЁё]/.test(it.title || '');
+  }
   function watchKeyOf(it) {
     if (isSocial(it) && it.extra && it.extra.platform === 'telegram' && it.extra.channel) return { kind: 'channel', id: it.extra.channel, name: it.srcName };
     if (it.source_id && S.registry.byId.get(it.source_id)) return { kind: 'source', id: it.source_id, name: S.registry.byId.get(it.source_id).name };
@@ -1305,7 +1319,8 @@
     const snip = (m && (m.description || m.lead)) || it.snippet || '';
     S.tr.set(it.id, { loading: true });
     try {
-      const r = await api('/api/translate', { method: 'POST', body: { texts: [it.title, snip.slice(0, 2500)], to: 'ru' } });
+      const r = await api('/api/translate', { method: 'POST', body: { texts: [it.title, snip.slice(0, 2500)], to: 'ru', from: it.lang || 'auto' } });
+      if (!r.texts[0]) throw new Error('сервисы перевода не ответили');
       S.tr.set(it.id, { title: r.texts[0] || '', snippet: snip ? r.texts[1] || '' : '', engine: r.engine, done: true });
     } catch (e) { S.tr.set(it.id, { error: e.message, done: true }); }
     if (S.selected === it.id) renderDetail(S.items.get(it.id) || it, true);
@@ -1328,13 +1343,15 @@
     }
     const tr = S.tr.get(it.id);
     if (!tr || (tr.titleOnly && !tr.loading)) {
-      if (tr && tr.title) box.appendChild(el('div', { class: 'dtr-title', lang: 'ru' }, tr.title));
       box.appendChild(actBtn('translate', 'Перевести заголовок и аннотацию', () => translateItem(it, true)));
-    } else if (tr.loading) box.appendChild(el('div', { class: 'muted' }, el('span', { class: 'spinner' }), ' перевожу заголовок и аннотацию…'));
-    else if (tr.error) box.appendChild(el('div', { class: 'muted' }, 'Перевод недоступен: ' + tr.error));
-    else {
-      box.appendChild(el('div', { class: 'dtr-title', lang: 'ru' }, tr.title));
+    } else if (tr.loading) box.appendChild(el('div', { class: 'muted' }, el('span', { class: 'spinner' }), ' перевожу аннотацию…'));
+    else if (tr.error) {
+      const again = actBtn('translate', 'Повторить перевод', () => { S.tr.delete(it.id); translateItem(it, true); });
+      box.appendChild(el('div', { class: 'muted' }, 'Перевод не получен: ' + tr.error + '. ', again,
+        el('div', { style: 'font-size:11.5px;margin-top:4px' }, 'Если так постоянно — Google мог ограничить запросы с вашего адреса; ключ DeepL в Настройках решает это.')));
+    } else {
       if (tr.snippet) box.appendChild(el('div', { class: 'dsnip', lang: 'ru' }, tr.snippet));
+      else box.appendChild(el('div', { class: 'muted' }, 'аннотации нет — переведите полный текст'));
       box.appendChild(el('div', { class: 'muted', style: 'font-size:11px;margin-top:4px' }, 'машинный перевод · ' + (tr.engine || '')));
     }
     const full = S.trFull.get(it.id);
@@ -1349,7 +1366,7 @@
       const body = el('div', { class: 'dtr-full', lang: 'ru' });
       for (const b of full.blocks) body.appendChild(el(b.k === 'h2' || b.k === 'h3' ? 'h5' : 'p', null, b.tr || b.t));
       if (full.truncated) body.appendChild(el('p', { class: 'muted' }, '… переведено начало статьи (длинный текст). Полностью — «Читать в переводе».'));
-      box.appendChild(dsec('Полный текст (перевод · ' + (full.engine || '') + ')', body, true, 'trfull'));
+      box.appendChild(sect('Полный текст — перевод · ' + (full.engine || ''), body, 'nested'));
     }
     return box;
   }
@@ -1377,9 +1394,22 @@
     const head = el('div', { class: 'dhead' },
       el('div', { class: 'dkicker' }, el('span', null, kicker), close),
       marked(it.title, it.hit === 'title' ? it.term : '', { class: 'dtitle', lang: it.lang || '', dir: 'auto' }, 'h2'));
-    const needTr = it.lang && it.lang !== 'ru';
+    const needTr = needsTr(it);
+    if (needTr && SERVER && !S.tr.has(it.id) && S.settings.ui_autotranslate !== false) translateItem(it);
     const trc = needTr ? S.tr.get(it.id) : null;
-    if (trc && trc.title) head.appendChild(el('div', { class: 'dtitle-ru', lang: 'ru' }, trc.title));
+    if (needTr && SERVER) {
+      if (trc && trc.title) head.appendChild(el('div', { class: 'dtitle-ru', lang: 'ru' }, el('span', { class: 'rulbl' }, 'RU'), trc.title));
+      else if (trc && trc.loading) head.appendChild(el('div', { class: 'dtitle-ru muted' }, el('span', { class: 'rulbl' }, 'RU'), el('span', { class: 'spinner' }), ' перевожу заголовок…'));
+      else if (trc && trc.error) {
+        const again = el('button', { class: 'linkbtn' }, 'повторить');
+        again.addEventListener('click', () => { S.tr.delete(it.id); translateItem(it, true); });
+        head.appendChild(el('div', { class: 'dtitle-ru muted' }, el('span', { class: 'rulbl' }, 'RU'), 'перевод не получен — ', again));
+      } else {
+        const go = el('button', { class: 'linkbtn' }, 'перевести заголовок на русский');
+        go.addEventListener('click', () => translateItem(it, true));
+        head.appendChild(el('div', { class: 'dtitle-ru muted' }, el('span', { class: 'rulbl' }, 'RU'), go));
+      }
+    }
     head.appendChild(el('div', { class: 'dsub' }, (it.srcName || it.domain || '') + (it.ts ? ' · ' + fmtDate(it.ts) : ' · без даты') + (it.authors && it.authors.length ? ' · ' + it.authors.slice(0, 3).join(', ') : '')));
     const acts = el('div', { class: 'dactions' });
     acts.appendChild(el('a', { class: 'btn small', href: url, target: '_blank', rel: 'noopener noreferrer', title: 'Открыть оригинал (O)' }, icon('ext'), 'Оригинал'));
@@ -1398,7 +1428,7 @@
     box.appendChild(head);
 
     const e = explain(it);
-    box.appendChild(dsec(el('h4', null, 'Найдено по', el('span', { class: 'dsum' }, e.kw ? '«' + e.kw + '»' + (it.term ? ' · ' + termShown(it) : '') : '')), foundBy(it, true), true, 'found', 'foundsec'));
+    box.appendChild(sect(el('h4', null, 'Найдено по', el('span', { class: 'dsum' }, e.kw ? '«' + e.kw + '»' + (it.term ? ' · ' + termShown(it) : '') : '')), foundBy(it, true), 'foundsec'));
 
     // статус
     const o = it.origin || { status: 'unknown', reason: '', confidence: 'low' };
@@ -1429,10 +1459,7 @@
     box.appendChild(sbox);
 
     // перевод
-    if (needTr) {
-      if (SERVER && !S.tr.has(it.id) && S.settings.ui_autotranslate !== false) translateItem(it);
-      box.appendChild(dsec('Перевод на русский', translationBlock(it), true, 'tr'));
-    }
+    if (needTr) box.appendChild(sect('Перевод на русский', translationBlock(it)));
 
     // сведения
     const T = C.TIERS[it.tier] || C.TIERS[4];
@@ -1467,15 +1494,12 @@
     if (it.pdf) more.push(['PDF документа', extLink(it.pdf, 'скачать PDF ↗')]);
     if (it.extra && it.extra.doi) more.push(['DOI', extLink(it.extra.doi, it.extra.doi)]);
     const tbl = el('table', { class: 'dtable' });
-    for (const [k, v] of main) tbl.appendChild(el('tr', null, el('th', null, k), el('td', null, v)));
-    const tbl2 = el('table', { class: 'dtable' });
-    for (const [k, v] of more) tbl2.appendChild(el('tr', null, el('th', null, k), el('td', null, v)));
-    const info = el('div', null, tbl, dsec('Все сведения', tbl2, false, 'allinfo', 'nested'));
-    box.appendChild(dsec('Сведения', info, true, 'info'));
+    for (const [k, v] of main.concat(more)) tbl.appendChild(el('tr', null, el('th', null, k), el('td', null, v)));
+    box.appendChild(sect('Сведения', tbl));
 
     // аннотация
     const snip = (m && (m.description || m.lead)) || it.snippet;
-    if (snip && C.normText(snip) !== C.normText(it.title)) box.appendChild(dsec(social ? 'Текст публикации' : 'Аннотация', marked(snip, it.term, { class: 'dsnip', lang: it.lang || '', dir: 'auto' }, 'div'), snip.length < 500 || social, 'snip'));
+    if (snip && C.normText(snip) !== C.normText(it.title)) box.appendChild(sect(social ? 'Текст публикации' : 'Аннотация', marked(snip, it.term, { class: 'dsnip', lang: it.lang || '', dir: 'auto' }, 'div')));
 
     // сюжет
     if (it.storySize > 1) {
@@ -1487,12 +1511,12 @@
         ul.appendChild(el('li', null, originBadge(x.origin, true), el('div', null, a,
           el('div', { class: 'm' }, fmtShort(x.ts) + ' · ' + (x.srcName || x.domain) + ' · ' + (C.TIERS[x.tier] || C.TIERS[4]).code, i === 0 ? el('span', { class: 'first' }, 'первым') : null))));
       });
-      box.appendChild(dsec('Сюжет · ' + members.length + ' публикаций', ul, false, 'story'));
+      box.appendChild(sect('Сюжет · ' + members.length + ' публикаций (по времени)', ul));
     }
     if (it.related && it.related.length) {
       const ul = el('ul', { class: 'dlist' });
       it.related.forEach((r) => ul.appendChild(el('li', null, el('span', { class: 'muted' }, '•'), el('div', null, extLink(r.url, r.title), el('div', { class: 'm' }, r.source)))));
-      box.appendChild(dsec('Связанные публикации · ' + it.related.length, ul, false, 'related'));
+      box.appendChild(sect('Связанные публикации (Google «Полное освещение») · ' + it.related.length, ul));
     }
 
     // действия
@@ -1506,7 +1530,7 @@
     g.appendChild(actBtn('search', 'Найти в веб-архиве', () => window.open('https://web.archive.org/web/*/' + url, '_blank', 'noopener')));
     g.appendChild(actBtn('archive', 'archive.today', () => window.open('https://archive.ph/submit/?url=' + encodeURIComponent(url), '_blank', 'noopener')));
     g.appendChild(actBtn('search', 'Этот заголовок в поиске', () => window.open('https://www.google.com/search?q=' + encodeURIComponent('"' + C.titleCore(it.title).slice(0, 110) + '"'), '_blank', 'noopener'), 'Найти другие публикации с тем же заголовком'));
-    box.appendChild(dsec('Действия: PDF, архив', g, false, 'actions'));
+    box.appendChild(sect('Действия: PDF, веб-архив', g));
 
     // заметка
     const d = S.dossier.get(it.id);
@@ -1517,7 +1541,7 @@
       S.dossier.get(it.id).note = note.value;
       saveDossier();
     });
-    box.appendChild(dsec('Заметка' + (d && d.note ? ' ✎' : ''), note, !!(d && d.note), 'note'));
+    box.appendChild(sect('Заметка', note));
     if (keepScroll) box.scrollTop = scroll;
   }
   function actBtn(ic, label, fn, title) {
@@ -1567,13 +1591,14 @@
     const n = Number(S.settings.ui_autocheck == null ? 25 : S.settings.ui_autocheck);
     const nv = Number(S.settings.ui_verify == null ? 40 : S.settings.ui_verify);
     const byScore = (a, b) => (b.score || 0) - (a.score || 0);
-    const cands = n ? visible.filter((x) => !S.meta.has(x.id) && x.origin && (x.origin.status === 'unknown' || x.origin.confidence === 'low') && (x.tier || 4) <= 3)
-      .sort(byScore).slice(0, n) : [];
-    // материалы, где тема видна только поисковику: проверяем страницы (ссылки Google News — не больше 15,
-    // чтобы не упереться в ограничения Google)
+    // ссылки Google News раскрываются только через сам Google (2 запроса на ссылку) — после поиска проверяем
+    // лишь несколько таких материалов, чтобы не вызвать ограничения Google; остальные — по кнопке или в карточке
     let gn = 0;
+    const gnOk = (x) => !x.gn || gn++ < 4;
+    const cands = n ? visible.filter((x) => !S.meta.has(x.id) && x.origin && (x.origin.status === 'unknown' || x.origin.confidence === 'low') && (x.tier || 4) <= 3 && !x.gn)
+      .sort(byScore).slice(0, n) : [];
     const unver = nv ? [...S.items.values()].filter((x) => x.rel === 'unverified' && !S.meta.has(x.id) && (x.tier || 4) <= 3 && baseOk(x))
-      .sort(byScore).filter((x) => !x.gn || gn++ < 15).slice(0, nv) : [];
+      .sort(byScore).filter(gnOk).slice(0, nv) : [];
     const q = [];
     for (let i = 0; i < Math.max(cands.length, unver.length); i++) {
       if (unver[i]) q.push(unver[i]);
@@ -1993,7 +2018,7 @@
     const num = (k, def, min, max) => { const i = el('input', { class: 'input', type: 'number', min: String(min), max: String(max), style: 'width:120px' }); i.value = s[k] != null ? s[k] : def; i.dataset.k = k; return i; };
     const autoN = num('ui_autocheck', 25, 0, 80);
     const verN = num('ui_verify', 40, 0, 100);
-    const budget = num('gnews_budget', 120, 10, 300);
+    const budget = num('gnews_budget', 90, 10, 300);
     const maxs = num('max_seconds', 300, 60, 900);
     const rw = el('input', { class: 'input', style: 'width:260px', placeholder: 'например: oko-analytics' }); rw.value = s.reliefweb_appname || '';
     const disc = el('input', { type: 'checkbox' }); disc.checked = s.auto_discovery !== false;
@@ -2158,6 +2183,7 @@
       sec('Вкладки поиска', true, el('ul', null,
         el('li', null, el('b', null, 'Тематика'), ' — страна, регион, организация или явление (по умолчанию «Узбекистан»). Направления (экономика, энергетика, безопасность, внешняя политика…) сужают поиск: материал должен касаться темы и одного из направлений. Термины переводятся на все выбранные языки.'),
         el('li', null, el('b', null, 'Ключевые слова'), ' — любые слова: «и» (должно быть также), «не» (исключить), точная фраза, поиск без перевода.'),
+        el('li', null, el('b', null, 'Соцсети'), ' — отдельный поиск только по соцсетям: выбор платформ (Telegram — сразу, остальные — по ключам API), каналы Telegram, ручной поиск на платформах.'),
         el('li', null, el('b', null, 'Персоны'), ' — человек из Wikidata: должности, гражданство, официальные аккаунты, имя на всех языках; затем — упоминания в СМИ и соцсетях.'),
         el('li', null, el('b', null, 'OSINT'), ' — e-mail, телефон, @имя, домен, ссылка, IP: DNS, WHOIS (RDAP), публичные профили, веб-архив, упоминания в поисковиках. Только открытые данные — без утечек и «пробива».'),
         el('li', null, el('b', null, 'Доклады'), ' — новые выпуски глобальных докладов и индексов (ООН, МВФ, Всемирный банк, ЕС, ОЭСР, ВОЗ, WEF, IEP, SIPRI, Freedom House, RIAC и др.) и календарь ожидаемых выпусков.'))),
@@ -2165,11 +2191,11 @@
         el('p', null, 'Режим «Строго по теме» (включён по умолчанию) скрывает материалы, где тема видна только поисковику — часто это упоминание вскользь или ссылка «читайте также». ОКО само открывает такие страницы, считает абзацы с упоминанием и возвращает в ленту те, где тема раскрыта; в карточке — цитата.')),
       sec('Уровни авторитетности', false, legend, el('p', { class: 'muted' }, 'Уровень задаётся реестром (' + S.sources.length + ' источников, включая все аналитические центры и издания из ваших закладок) и меняется в разделе «Источники». Официальные домены (.gov, .int и т. п.) распознаются автоматически.')),
       sec('Первоисточник или перепубликация', false, ol, el('p', { class: 'muted' }, 'Статус определяется эвристически и всегда сопровождается обоснованием и степенью уверенности.')),
-      sec('Соцсети', false, el('p', null, 'Результаты из соцсетей — отдельно, переключатель «Соцсети» над лентой. Без ключей ОКО ищет по публичным Telegram-каналам (список — в Настройках, можно добавить свои). ВКонтакте, X, YouTube и поиск публичных публикаций LinkedIn, Facebook, Instagram и WhatsApp-каналов через Brave или Google подключаются ключами API в «Настройки → Соцсети и ключи API».'),
+      sec('Соцсети', false, el('p', null, 'Вкладка «Соцсети» в строке поиска — поиск только по соцсетям. Результаты — отдельно, переключатель «Соцсети» над лентой. Без ключей ОКО ищет по публичным Telegram-каналам (список — в Настройках, можно добавить свои). ВКонтакте, X, YouTube и поиск публичных публикаций LinkedIn, Facebook, Instagram и WhatsApp-каналов через Brave или Google подключаются ключами API в «Настройки → Соцсети и ключи API».'),
         el('p', { class: 'muted' }, 'Переписка в WhatsApp зашифрована и недоступна никому — видны только публичные каналы. Закрытые группы и личные страницы ОКО не собирает.')),
       sec('Мониторинг источников', false, el('p', null, 'Отметьте источники значком «глаз» (в «Источниках» или «Следить за источником» в карточке) или добавьте Telegram-каналы. Раздел «Мониторинг» → «Обновить» покажет свежие публикации по источникам с отметкой новых. «Досье» — избранные материалы с заметками.')),
       sec('Перевод на русский', false, el('p', null, 'Карточка материала на другом языке сразу показывает перевод заголовка и аннотации; «Перевести полный текст» переводит статью прямо в карточке, «PDF перевода» — сохраняет перевод. В меню «Вид» можно включить «Заголовки по-русски» для всей ленты. Для лучшего качества укажите ключ DeepL в настройках.')),
-      sec('Ошибки каналов', false, el('p', null, 'Счётчик «Ошибок» и «Журнал» показывают, какой канал не ответил, почему и что делать; «Скопировать отчёт об ошибках» — для пересылки разработчику. Каналы, которые падают несколько поисков подряд, ОКО временно отключает и потом проверяет снова (список — «Источники → Каналы с ошибками»). Если Google, GDELT или Bing ограничили частоту запросов, оставшиеся запросы помечаются «пропущено» — повторите поиск через 10–15 минут.')),
+      sec('Ошибки каналов', false, el('p', null, 'Счётчик «Ошибок» и «Журнал» показывают, какой канал не ответил, почему и что делать; «Скопировать отчёт об ошибках» — для пересылки разработчику. Каналы, которые падают несколько поисков подряд, ОКО временно отключает и потом проверяет снова (список — «Источники → Каналы с ошибками»). ОКО бережёт лимиты сервисов: Google — по одному запросу с паузой, GDELT — 3–4 запроса вместо 13. Если сервис всё же ответил «слишком часто», ОКО делает паузу, замедляется и повторяет запрос; только после трёх отказов подряд сервис пропускается на 10 минут («пропущено»). Если так при каждом поиске — у провайдера, вероятно, общий IP-адрес на многих абонентов: помогают другая сеть или VPN.')),
       sec('Телефон', false, el('ul', null,
         el('li', null, el('b', null, 'Telegram-бот'), ': создайте бота у @BotFather, вставьте токен и свой Telegram ID в «Настройки → Телефон». Напишите боту тему — он пришлёт самые авторитетные материалы и HTML-сводку; /digest 08:30 — ежедневная сводка.'),
         el('li', null, el('b', null, 'Браузер телефона'), ': задайте пароль, запустите «python oko.py --lan» — адрес для телефона появится в окне ОКО; в меню браузера — «Добавить на главный экран».'),
@@ -2268,18 +2294,19 @@
   const TAB_PH = {
     topic: 'Страна, регион, организация или явление — например: Узбекистан',
     keywords: 'Ключевые слова через запятую (любое из них)',
+    social: 'Что искать в соцсетях: тема, имя, ключевые слова через запятую',
     person: 'Имя и фамилия — например: Шавкат Мирзиёев',
     osint: 'e-mail, +998…, @имя, домен, ссылка или IP',
     reports: 'необязательно: тема для отбора (например, Узбекистан)'
   };
-  const TAB_DEF = { topic: 'Узбекистан', keywords: '', person: '', osint: '', reports: '' };
+  const TAB_DEF = { topic: 'Узбекистан', keywords: '', social: 'Узбекистан', person: '', osint: '', reports: '' };
   function switchTab(t) {
     S.qvals[S.qtab] = $('#qTopic').value;
     S.qtab = t;
     store.set('qtab', t);
     store.set('qvals', S.qvals);
     $$('#qtabs button').forEach((b) => b.classList.toggle('on', b.dataset.t === t));
-    for (const k of ['topic', 'keywords', 'person', 'osint', 'reports']) $('#qx-' + k).classList.toggle('hidden', k !== t);
+    for (const k of ['topic', 'keywords', 'social', 'person', 'osint', 'reports']) $('#qx-' + k).classList.toggle('hidden', k !== t);
     const v = S.qvals[t] !== undefined ? S.qvals[t] : TAB_DEF[t];
     $('#qTopic').value = v;
     $('#qTopic').placeholder = TAB_PH[t];
@@ -2289,6 +2316,7 @@
     S.expansion = null;
     if (t === 'reports') renderReportsBox();
     if (t === 'person') renderPersonBox();
+    if (t === 'social') renderSocialBox();
     paramsSummary();
   }
   function renderThemeChips() {
@@ -2319,6 +2347,96 @@
     if (S.types.size) parts.push('категорий: ' + S.types.size);
     const open = !$('#qparams').classList.contains('hidden');
     $('#btnParams').textContent = 'Параметры: ' + parts.join(' · ') + (open ? ' ▴' : ' ▾');
+  }
+
+  // ---------------------------------------------------------------- соцсети: отдельный поиск
+  const SOC_ORDER = ['telegram', 'vk', 'x', 'linkedin', 'facebook', 'instagram', 'whatsapp', 'youtube'];
+  const WEB_PLATFORMS = new Set(['linkedin', 'facebook', 'instagram', 'whatsapp']);
+  function platformReady(pid) {
+    const k = (S.social && S.social.keys) || {};
+    if (pid === 'telegram') return { ok: true, why: 'без ключа — публичные каналы' };
+    if (pid === 'vk') return k.vk ? { ok: true, why: 'ключ VK задан' } : { ok: false, why: 'нужен сервисный ключ VK' };
+    if (pid === 'youtube') return k.youtube ? { ok: true, why: 'ключ задан' } : { ok: false, why: 'нужен ключ YouTube (бесплатно)' };
+    if (pid === 'x') {
+      if (k.x) return { ok: true, why: 'API X' };
+      return (k.brave || k.gcse) ? { ok: true, why: 'через поисковик (Brave/Google)' } : { ok: false, why: 'нужен ключ Brave/Google или платный API X' };
+    }
+    return (k.brave || k.gcse) ? { ok: true, why: 'через поисковик (' + (k.brave ? 'Brave' : 'Google') + ')' } : { ok: false, why: 'нужен бесплатный ключ Brave Search или Google' };
+  }
+  function socialSel() {
+    if (!S.socialSel) S.socialSel = new Set(store.get('socialSel', SOC_ORDER));
+    return S.socialSel;
+  }
+  function socialProviders() {
+    const sel = socialSel();
+    const prov = new Set(), plats = [];
+    const k = (S.social && S.social.keys) || {};
+    for (const pid of SOC_ORDER) {
+      if (!sel.has(pid) || !platformReady(pid).ok) continue;
+      if (pid === 'telegram') prov.add('telegram');
+      else if (pid === 'vk') prov.add('vk');
+      else if (pid === 'youtube') prov.add('youtube');
+      else if (pid === 'x') { if (k.x) prov.add('x'); else { prov.add('websocial'); plats.push('x'); } }
+      else { prov.add('websocial'); plats.push(pid); }
+    }
+    return { providers: [...prov], platforms: plats };
+  }
+  async function renderSocialBox() {
+    const box = clear($('#socialBox'));
+    if (!S.social && SERVER) { box.appendChild(el('span', { class: 'muted' }, 'загружаю сведения о платформах…')); await loadSocial(''); clear(box); }
+    const info = S.social || { platforms: {}, channels: [], keys: {} };
+    const sel = socialSel();
+    const chips = el('div', { class: 'chips' });
+    for (const pid of SOC_ORDER) {
+      const p = (info.platforms || {})[pid];
+      if (!p) continue;
+      const r = platformReady(pid);
+      const on = sel.has(pid) && r.ok;
+      const chip = el('span', { class: 'chip soc' + (on ? ' on' : '') + (r.ok ? '' : ' off'), title: r.why + (p.note ? ' — ' + p.note : '') },
+        platformBadge(pid), el('span', null, p.name), el('span', { class: 'muted', style: 'font-size:11px' }, r.ok ? (pid === 'telegram' ? (info.channels || []).length + ' каналов' : '') : 'нужен ключ'));
+      chip.addEventListener('click', () => {
+        if (!r.ok) { toast(p.name + ': ' + r.why + ' — Настройки → «Соцсети и ключи API»', true); return; }
+        if (sel.has(pid)) sel.delete(pid); else sel.add(pid);
+        store.set('socialSel', [...sel]);
+        renderSocialBox();
+      });
+      chips.appendChild(chip);
+    }
+    const keys = el('button', { class: 'linkbtn' }, 'подключить платформы (ключи API) →');
+    keys.addEventListener('click', () => showView('settings'));
+    box.append(el('div', { class: 'qrow' }, el('span', { class: 'qlabel' }, 'Платформы'), chips, keys));
+    // каналы Telegram
+    const chans = info.channels || [];
+    const list = el('div', { class: 'tchips' });
+    const shown = S.socialChAll ? chans : chans.slice(0, 10);
+    for (const c of shown) list.appendChild(el('span', { class: 'tchip tg', title: 't.me/' + c.id }, (c.name || c.id)));
+    if (chans.length > 10) {
+      const more = el('button', { class: 'linkbtn' }, S.socialChAll ? 'свернуть' : 'все ' + chans.length);
+      more.addEventListener('click', () => { S.socialChAll = !S.socialChAll; renderSocialBox(); });
+      list.appendChild(more);
+    }
+    const inp = el('input', { class: 'input', placeholder: '+ @канал или t.me/канал', style: 'width:200px' });
+    const add = el('button', { class: 'btn small' }, 'Добавить канал');
+    const doAdd = async () => {
+      const v = inp.value.trim().replace(/^(https?:\/\/)?(www\.)?(t\.me|telegram\.me)\/(s\/)?/, '').replace(/^@/, '').split(/[/?]/)[0];
+      if (!/^[A-Za-z][A-Za-z0-9_]{3,31}$/.test(v)) { toast('Некорректное имя канала', true); return; }
+      const off = (S.settings.tg_channels_off || []).filter((x) => x.toLowerCase() !== v.toLowerCase());
+      await saveSettings({ tg_channels_add: (S.settings.tg_channels_add || []).filter((x) => x.id !== v).concat([{ id: v, name: '@' + v, lang: /[а-яё]/i.test($('#qTopic').value) ? 'ru' : 'en' }]), tg_channels_off: off });
+      await loadSocial('');
+      renderSocialBox();
+    };
+    add.addEventListener('click', doAdd);
+    inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); doAdd(); } });
+    box.append(el('div', { class: 'qrow' }, el('span', { class: 'qlabel' }, 'Telegram'), list, inp, add));
+    // ручной поиск на платформах
+    const links = el('div', { class: 'sp-links' });
+    const q = $('#qTopic').value.trim();
+    for (const pid of SOC_ORDER) {
+      const p = (info.platforms || {})[pid];
+      if (p && q) links.appendChild(extLink(p.search.replace('{q}', encodeURIComponent(q)), p.name + ' ↗', 'btn small ghost'));
+    }
+    if (q) box.append(el('div', { class: 'qrow' }, el('span', { class: 'qlabel' }, 'Вручную'), links));
+    box.appendChild(el('div', { class: 'muted', style: 'font-size:12px' }, 'ОКО ищет только публичные публикации за выбранный период. Результаты — в разделе «Соцсети» над лентой. По перепискам WhatsApp поиск невозможен (шифрование): видны только публичные каналы. Закрытые группы и личные страницы недоступны.'));
   }
 
   // ---------------------------------------------------------------- персоны
@@ -2726,7 +2844,10 @@
     $('#btnSearch').addEventListener('click', runSearch);
     $('#btnStop').addEventListener('click', stopSearch);
     $$('#qtabs button').forEach((b) => b.addEventListener('click', () => switchTab(b.dataset.t)));
-    $('#qTopic').addEventListener('input', () => { if (S.qtab === 'person' && S.person && $('#qTopic').value.trim() !== S.person.label) { S.person = null; S.personCands = []; renderPersonBox(); } });
+    $('#qTopic').addEventListener('input', debounce(() => {
+      if (S.qtab === 'person' && S.person && $('#qTopic').value.trim() !== S.person.label) { S.person = null; S.personCands = []; renderPersonBox(); }
+      if (S.qtab === 'social') renderSocialBox();
+    }, 300));
     $$('#presets button').forEach((b) => b.addEventListener('click', () => setPreset(b.dataset.p)));
     $('#dFrom').addEventListener('change', customRange);
     $('#dTo').addEventListener('change', customRange);

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 from concurrent.futures import ThreadPoolExecutor
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 from .net import FetchError
 
@@ -28,8 +28,53 @@ def _gtx(http, text: str, to: str, src: str = "auto") -> str | None:
         return None
 
 
+def _clients5(http, texts: list, to: str, src: str = "auto") -> list | None:
+    """Запасной веб-интерфейс Google (как у расширения Chrome): несколько текстов одним запросом."""
+    params = [("client", "dict-chrome-ex"), ("sl", GT_LANG.get(src, src) if src else "auto"),
+              ("tl", GT_LANG.get(to, to))] + [("q", t) for t in texts]
+    try:
+        data = http.get_json("https://clients5.google.com/translate_a/t?" + urlencode(params), ttl=TTL, timeout=12,
+                             retries=1)
+    except (FetchError, ValueError):
+        return None
+    return _parse_c5(data, len(texts))
+
+
+def _parse_c5(data, n: int):
+    if isinstance(data, dict):  # старый формат {"sentences": [{"trans": ...}]}
+        s = "".join(x.get("trans", "") for x in data.get("sentences") or [] if isinstance(x, dict))
+        return [s] if n == 1 and s else None
+    if not isinstance(data, list):
+        return None
+    if n == 1 and len(data) == 2 and all(isinstance(x, str) for x in data) and len(data[1]) <= 6:
+        return [data[0]]  # ["перевод", "en"]
+    out = []
+    for x in data:
+        if isinstance(x, str):
+            out.append(x)
+        elif isinstance(x, list) and x and isinstance(x[0], str):
+            out.append(x[0])
+        else:
+            return None
+    return out if len(out) == n and all(out) else None
+
+
+def _lingva(http, text: str, to: str, src: str = "auto") -> str | None:
+    """Последний запасной вариант: открытый прокси Google Переводчика Lingva."""
+    if len(text) > 1500:
+        return None
+    try:
+        data = http.get_json("https://lingva.ml/api/v1/%s/%s/%s" % (
+            quote(GT_LANG.get(src, src) or "auto"), quote(GT_LANG.get(to, to)), quote(text, safe="")),
+            ttl=TTL, timeout=10, retries=0)
+        t = (data or {}).get("translation", "")
+        return t.strip() or None
+    except (FetchError, ValueError, AttributeError):
+        return None
+
+
 def _mymemory(http, text: str, to: str, src: str) -> str | None:
-    if len(text) > 480 or src == "auto":
+    if len(text) > 480 or not src or src == "auto":
         return None
     mm = {"zh": "zh-CN", "zh-Hant": "zh-TW"}
     url = "https://api.mymemory.translated.net/get?" + urlencode(
@@ -89,16 +134,30 @@ def translate_one(http, text: str, to: str = "ru", src: str = "auto", deepl_key:
         res = _deepl(http, pieces, to, deepl_key)
         if res:
             return "\n".join(res), "DeepL"
-    out, engine = [], "Google"
+    out, engines = [], []
     for p in pieces:
-        t = _gtx(http, p, to, src)
-        if t is None:
-            t = _mymemory(http, p, to, src)
-            engine = "MyMemory" if t else engine
+        t, eng = _one_piece(http, p, to, src)
         if t is None:
             return "", ""
         out.append(t)
-    return "\n".join(out), engine
+        engines.append(eng)
+    return "\n".join(out), ", ".join(sorted(set(engines)))
+
+
+def _one_piece(http, p: str, to: str, src: str):
+    t = _gtx(http, p, to, src)
+    if t:
+        return t, "Google"
+    r = _clients5(http, [p], to, src)
+    if r:
+        return r[0], "Google"
+    t = _mymemory(http, p, to, src)
+    if t:
+        return t, "MyMemory"
+    t = _lingva(http, p, to, src)
+    if t:
+        return t, "Lingva"
+    return None, ""
 
 
 def translate_many(http, texts: list, to: str = "ru", src: str = "auto", deepl_key: str = "") -> dict:
@@ -110,13 +169,36 @@ def translate_many(http, texts: list, to: str = "ru", src: str = "auto", deepl_k
         res = _deepl(http, texts, to, deepl_key)
         if res:
             return {"texts": res, "engine": "DeepL"}
-    with ThreadPoolExecutor(max_workers=4) as ex:
-        res = list(ex.map(lambda t: translate_one(http, t, to, src), texts))
-    engines = {e for _, e in res if e}
-    return {"texts": [t for t, _ in res], "engine": ", ".join(sorted(engines))}
+    out = [""] * len(texts)
+    engines = set()
+    # короткие тексты (заголовки) — пачками одним запросом, так быстрее и бережнее к лимитам Google
+    short = [i for i, t in enumerate(texts) if t.strip() and len(t) <= 400]
+    batch, size = [], 0
+    for i in short + [None]:
+        if i is not None and len(batch) < 25 and size + len(texts[i]) <= 2500:
+            batch.append(i)
+            size += len(texts[i])
+            continue
+        if batch:
+            res = _clients5(http, [texts[j] for j in batch], to, src)
+            if res:
+                for j, t in zip(batch, res):
+                    out[j] = t
+                engines.add("Google")
+        batch, size = ([i], len(texts[i])) if i is not None else ([], 0)
+    rest = [i for i, t in enumerate(texts) if t.strip() and not out[i]]
+    with ThreadPoolExecutor(max_workers=3) as ex:
+        res = list(ex.map(lambda i: translate_one(http, texts[i], to, src), rest))
+    for i, (t, e) in zip(rest, res):
+        out[i] = t
+        if e:
+            engines.add(e)
+    return {"texts": out, "engine": ", ".join(sorted(engines)),
+            "failed": sum(1 for i, t in enumerate(texts) if t.strip() and not out[i])}
 
 
-def translate_blocks(http, blocks: list, to: str = "ru", deepl_key: str = "", limit: int = 30000) -> tuple[list, str]:
+def translate_blocks(http, blocks: list, to: str = "ru", deepl_key: str = "", limit: int = 30000,
+                     src: str = "auto") -> tuple[list, str]:
     """Перевести абзацы статьи, сохраняя структуру: [{"k", "t", "tr"}]."""
     out, total = [], 0
     for b in blocks:
@@ -134,7 +216,7 @@ def translate_blocks(http, blocks: list, to: str = "ru", deepl_key: str = "", li
                 b["tr"] = t
             return out, "DeepL"
     with ThreadPoolExecutor(max_workers=3) as ex:
-        res = list(ex.map(lambda p: _gtx(http, p, to) or _mymemory(http, p, to, "auto") or "", parts))
+        res = list(ex.map(lambda p: _one_piece(http, p, to, src)[0] or "", parts))
     text = "\n".join(res)
     paras = [x for x in text.split("\n") if x.strip()]
     if len(paras) == len(out):
@@ -142,7 +224,7 @@ def translate_blocks(http, blocks: list, to: str = "ru", deepl_key: str = "", li
             b["tr"] = t.strip()
     else:  # абзацы склеились — переводим поштучно
         with ThreadPoolExecutor(max_workers=3) as ex:
-            res2 = list(ex.map(lambda b: translate_one(http, b["t"], to)[0], out))
+            res2 = list(ex.map(lambda b: translate_one(http, b["t"], to, src)[0], out))
         for b, t in zip(out, res2):
             b["tr"] = t
     return out, "Google"

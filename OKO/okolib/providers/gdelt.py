@@ -53,6 +53,10 @@ COUNTRIES = {
 }
 
 
+GROUP = 4  # языков в одном запросе: меньше запросов — меньше риск ограничений GDELT
+HOST = "api.gdeltproject.org"
+
+
 def tasks(ctx) -> list:
     now = now_ts()
     if ctx.t_to < now - WINDOW:
@@ -61,32 +65,45 @@ def tasks(ctx) -> list:
     en = ctx.plan.get("en") or {}
     if not en.get("q"):
         return []
-    out = [Task("gdelt", "gdelt:all", "GDELT · все языки", partial(_run, code=None), group="all",
+    out = [Task("gdelt", "gdelt:all", "GDELT · все языки", partial(_run, codes=None), group="all",
                 meta=_meta(ctx, None))]
-    for code in PRIORITY:
-        if code not in ctx.lang_codes:
-            continue
-        lang = ctx.languages.by_code.get(code) or {}
-        if lang.get("gdelt"):
-            out.append(Task("gdelt", "gdelt:" + code, "GDELT · " + lang.get("name", code),
-                            partial(_run, code=code), group=code, meta=_meta(ctx, code)))
+    codes = [c for c in PRIORITY if c in ctx.lang_codes and (ctx.languages.by_code.get(c) or {}).get("gdelt")]
+    for i in range(0, len(codes), GROUP):
+        grp = codes[i:i + GROUP]
+        names = ", ".join(ctx.languages.by_code[c].get("name", c) for c in grp)
+        out.append(Task("gdelt", "gdelt:" + "+".join(grp), "GDELT · " + names, partial(_run, codes=grp),
+                        group="gdelt", meta=_meta(ctx, grp)))
     return out
 
 
-def _meta(ctx, code) -> dict:
+def _meta(ctx, codes) -> dict:
     en = ctx.plan.get("en") or {}
     terms = list(en.get("q", [])[:4])
-    if code and code != "en":
-        terms += [t for t in (ctx.plan.get(code) or {}).get("q", [])[:2] if len(t) >= 2]
-    return {"query": build_query(ctx, code), "terms": terms, "host": "api.gdeltproject.org"}
+    for code in codes or []:
+        if code != "en":
+            terms += [t for t in (ctx.plan.get(code) or {}).get("q", [])[:1] if len(t) >= 2]
+    return {"query": build_query(ctx, codes), "terms": terms, "host": HOST}
 
 
-def build_query(ctx, code) -> str:
+def _langs(ctx, codes) -> str:
+    names = [ctx.languages.by_code[c]["gdelt"] for c in codes or [] if ctx.languages.by_code.get(c, {}).get("gdelt")]
+    if not names:
+        return ""
+    if len(names) == 1:
+        return " sourcelang:" + names[0]
+    return " (" + " OR ".join("sourcelang:" + n for n in names) + ")"
+
+
+def build_query(ctx, codes, english_only: bool = False) -> str:
+    if isinstance(codes, str):
+        codes = [codes]
     en = ctx.plan.get("en") or {}
     terms = list(en.get("q", [])[:4])
     native = []
-    if code and code != "en":
-        native = [t for t in (ctx.plan.get(code) or {}).get("q", [])[:2] if len(t) >= 2]
+    if not english_only:
+        for code in codes or []:
+            if code != "en":
+                native += [t for t in (ctx.plan.get(code) or {}).get("q", [])[:1] if len(t) >= 2]
     ctx_terms = list(en.get("ctx", [])[:3])
     q = or_group([t for t in terms + native if len(t) >= 3 or not t.isascii()], "gdelt")
     if ctx_terms:
@@ -94,36 +111,26 @@ def build_query(ctx, code) -> str:
     for x in (en.get("not") or [])[:3]:
         if len(x) >= 3:
             q += ' -"%s"' % x.replace('"', "") if " " in x else " -" + x
-    if code:
-        q += " sourcelang:" + ctx.languages.by_code[code]["gdelt"]
-    return q
+    return q + _langs(ctx, codes)
 
 
-def _run(ctx, task, code) -> int:
+def _run(ctx, task, codes) -> int:
     now = now_ts()
     start = max(ctx.t_from, now - WINDOW)
     end = min(ctx.t_to, now)
     if end <= start:
         return 0
-    if code is None and ctx.t_from < now - WINDOW:
+    if codes is None and ctx.t_from < now - WINDOW:
         task.meta["note"] = "GDELT хранит только последние 3 месяца — начало периода обрезано"
-    q = build_query(ctx, code)
+    q = build_query(ctx, codes)
     try:
-        try:
-            arts = _fetch(ctx, q, start, end)
-        except FetchError as e:
-            if e.status != 429 or ctx.cancel.is_set():
-                raise
-            ctx.cancel.wait(6.5)  # GDELT просит не чаще раза в 5 с — одна повторная попытка
-            arts = _fetch(ctx, q, start, end)
+        arts = _fetch(ctx, q, start, end)
     except FetchError as e:
-        if e.status == 429:
-            ctx.http.block_host("api.gdeltproject.org", 90)
+        if e.status == 429 or ctx.cancel.is_set():
             raise
-        if code and code != "en" and "sourcelang" in q and not q.isascii():
+        if codes and not q.isascii():
             # запасной вариант — только английские термины
-            en = ctx.plan.get("en") or {}
-            q2 = or_group(en.get("q", [])[:4], "gdelt") + " sourcelang:" + ctx.languages.by_code[code]["gdelt"]
+            q2 = build_query(ctx, codes, english_only=True)
             arts = _fetch(ctx, q2, start, end)
             task.meta["note"] = "поиск по английским терминам (%s)" % e.short()
             task.meta["query"] = q2
@@ -131,13 +138,13 @@ def _run(ctx, task, code) -> int:
             raise
     added = 0
     for a in arts:
-        item = convert(a, code)
+        item = convert(a, (codes or [None])[0] if codes and len(codes) == 1 else None)
         if item and ctx.add(item):
             added += 1
     return added
 
 
-def _fetch(ctx, q, start, end):
+def _fetch(ctx, q, start, end, again: bool = True):
     params = {"query": q, "mode": "artlist", "format": "json", "maxrecords": "250", "sort": "datedesc",
               "startdatetime": ts_to_date(start, "%Y%m%d%H%M%S"), "enddatetime": ts_to_date(end, "%Y%m%d%H%M%S")}
     ttl = 6 * 3600 if now_ts() - end > 86400 else 15 * 60
@@ -148,7 +155,10 @@ def _fetch(ctx, q, start, end):
     if not text.startswith("{"):
         msg = re.sub(r"\s+", " ", text)[:160]
         if "limit requests" in msg.lower():
-            raise FetchError("GDELT: превышена частота запросов", 429)
+            # GDELT ответил «не чаще раза в 5 секунд» в тексте: пауза, замедление и одна повторная попытка
+            if ctx.http.note_limit(HOST) or not again or ctx.cancel.is_set():
+                raise FetchError("GDELT: превышена частота запросов", 429)
+            return _fetch(ctx, q, start, end, again=False)
         raise FetchError("GDELT: %s" % msg)
     try:
         data = json.loads(text, strict=False)

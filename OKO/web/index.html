@@ -39,6 +39,7 @@
   <div class="qtabs" id="qtabs" role="tablist">
     <button data-t="topic" class="on" title="Страна, регион, организация или явление + тематические направления">Тематика</button>
     <button data-t="keywords" title="Произвольные ключевые слова с условиями «и» / «не»">Ключевые слова</button>
+    <button data-t="social" title="Поиск только в соцсетях: Telegram, ВКонтакте, X, LinkedIn, Facebook, Instagram, WhatsApp-каналы, YouTube">Соцсети</button>
     <button data-t="person" title="Упоминания конкретного человека на всех языках, его должности и аккаунты">Персоны</button>
     <button data-t="osint" title="Анализ e-mail, телефона, имени пользователя, домена, ссылки или IP по открытым данным">OSINT</button>
     <button data-t="reports" title="Новые глобальные доклады и индексы международных организаций">Доклады</button>
@@ -60,6 +61,7 @@
     <label class="check" title="Искать фразу целиком, без перевода по частям"><input type="checkbox" id="optExact"> точная фраза</label>
     <label class="check" title="Переводить ключевые слова на выбранные языки"><input type="checkbox" id="optTranslate" checked> переводить на языки</label>
   </div>
+  <div class="qx hidden" id="qx-social"><div id="socialBox" class="socialbox"></div></div>
   <div class="qx hidden" id="qx-person"><div id="personBox" class="personbox"><span class="muted">Введите имя и нажмите «НАЙТИ» — ОКО найдёт человека в Wikidata, покажет должности и аккаунты и соберёт упоминания на всех языках.</span></div></div>
   <div class="qx hidden" id="qx-osint"><div id="osintBox" class="osintbox"><span class="muted">E-mail, номер телефона, @имя пользователя, домен, ссылка или IP-адрес. Только открытые данные: DNS, WHOIS (RDAP), публичные профили, веб-архив, упоминания в поисковиках.</span></div></div>
   <div class="qx hidden" id="qx-reports"><div id="reportsBox" class="reportsbox"></div></div>

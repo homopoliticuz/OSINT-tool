@@ -119,6 +119,11 @@
   "content_type": "application/json"
  },
  {
+  "pattern": "clients5\\.google\\.com/translate_a/t\\?client=dict-chrome-ex&sl=[^&]*&tl=ru&q=[^&]*&q=[^&]*$",
+  "file": "c5_two.json",
+  "content_type": "application/json"
+ },
+ {
   "pattern": "translate\\.googleapis\\.com",
   "file": "mt_gas.json",
   "content_type": "application/json"

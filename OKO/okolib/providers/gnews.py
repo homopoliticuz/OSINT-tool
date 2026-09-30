@@ -88,14 +88,20 @@ def tasks(ctx) -> list:
                             partial(_run, ed=ed, code=code, terms=p["q"][:4], ctx_terms=p["ctx"][:3],
                                     not_terms=p["not"][:4], sites=None),
                             group=code, meta=meta))
-    # адресный поиск по аналитическим источникам реестра: сначала уровень A, профильные по Центральной
-    # Азии и источники из закладок — чтобы при исчерпании лимита запросов важное было уже опрошено
+    # адресный поиск по аналитическим источникам реестра: только тем, у кого нет своего канала (ленты RSS
+    # или поиска по сайту) — остальные ОКО опрашивает напрямую, не расходуя запросы к Google.
+    # Для длинных периодов (лента хранит лишь последние материалы) добавляются источники уровня A.
+    # Порядок: уровень A, профильные по Центральной Азии, закладки — важное опрашивается первым.
     groups = {}
+    long_period = ctx.t_to - ctx.t_from > 4 * 86400
     ranked = sorted(ctx.registry.sources, key=lambda s: (s.get("tier", 3), not s.get("ca"), not s.get("bm")))
     for s in ranked:
         if s.get("off") or not ctx.source_allowed(s):
             continue
         if s.get("type") not in ANALYTIC_TYPES and not s.get("ca"):
+            continue
+        has_channel = bool(ctx.registry.feeds_for(s) or ctx.registry.wp_api_for(s))
+        if has_channel and not (long_period and s.get("tier", 3) == 1):
             continue
         langs = [l for l in s.get("lang", []) if l in ctx.lang_codes]
         pick = langs[:1] + (["en"] if "en" in langs[1:] else [])

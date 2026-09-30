@@ -119,6 +119,7 @@ class SearchCtx:
         self.report_matcher = None
         self.watch_sources = {str(x) for x in (params.get("sources") or [])}
         self.watch_channels = [c for c in (params.get("channels") or []) if isinstance(c, dict)]
+        self.platforms = {str(x) for x in (params.get("platforms") or [])}
         self.lang_codes = [c for c in params.get("langs", []) if c in self.languages.by_code]
         self.plan = sanitize_plan(params.get("plan"), self.lang_codes)
         self.t_from = int(params["t_from"])
@@ -135,7 +136,12 @@ class SearchCtx:
         self.not_matcher = TermMatcher(nott) if nott else None
         self.origins = sanitize_origins(params.get("origins"), self.plan, params.get("topics"),
                                         params.get("context"))
-        self.budget = {"gnews": int(self.settings.get("gnews_budget", 120))}
+        budget = int(self.settings.get("gnews_budget", 90))
+        self.cautious = self.http.recently_limited("news.google.com")
+        if self.cautious:
+            # Google недавно ограничивал запросы с этого адреса — половина лимита, чтобы не получить паузу снова
+            budget = max(20, budget // 2)
+        self.budget = {"gnews": budget}
         self._lock = threading.Lock()
         self._tl = threading.local()
 
@@ -388,8 +394,10 @@ class SearchJob:
         self.ctx = ctx = SearchCtx(self.app, self, self.params)
         chosen = self.params.get("providers")
         enabled = set(chosen) if chosen else {p[0] for p in PROVIDERS if p[4]}
-        if ctx.mode in (WATCH, REPORTS):
+        if ctx.mode in (WATCH, REPORTS, SOCIAL):
             enabled = {p[0] for p in PROVIDERS if ctx.mode in p[5]}
+            if ctx.mode == SOCIAL and chosen:
+                enabled &= set(chosen)
         if ctx.mode not in (WATCH, REPORTS) and (not ctx.plan or not any(p["q"] for p in ctx.plan.values())):
             self.emit("error", {"message": "не заданы поисковые термины"})
             return
@@ -442,6 +450,10 @@ class SearchJob:
                     lim[st["provider"]] = lim.get(st["provider"], 0) + 1
             self.emit("task", dict(st))
 
+        if ctx.cautious:
+            self.notes.append("Google News недавно ограничивал запросы с вашего адреса — ОКО работает осторожно: "
+                              "лимит запросов уменьшен вдвое, темп медленнее.")
+
         def run_task(t):
             st = self.tasks_state[t.key]
             if self.cancel.is_set():
@@ -466,6 +478,9 @@ class SearchJob:
             except FetchError as e:
                 kind = classify(e)
                 reason, hint = describe(kind)
+                if self.cancel.is_set() and (str(e) == "отменено" or kind != "limit"):
+                    st["ms"] = int((time.time() - t0) * 1000)
+                    return skip(st, "остановлено: лимит времени поиска или кнопка «Стоп»")
                 if kind == "limit" and host:
                     # пауза сервиса целиком, а не сбой канала — пропуск, а не ошибка
                     st["ms"] = int((time.time() - t0) * 1000)
@@ -512,10 +527,15 @@ class SearchJob:
                 pass
 
     def _finish(self):
-        for pid, n in (self.stats.get("limited") or {}).items():
-            label = {"gnews": "Google News", "gdelt": "GDELT", "bing": "Bing News"}.get(pid, pid)
-            self.notes.append("%s временно ограничил частоту запросов: пропущено %d запросов. Уже найденное "
-                              "сохранено — повторите поиск через 10–15 минут для полного охвата." % (label, n))
+        limited = self.stats.get("limited") or {}
+        for pid, n in limited.items():
+            label = {"gnews": "Google News", "gdelt": "GDELT", "bing": "Bing News", "telegram": "Telegram"}.get(pid, pid)
+            self.notes.append("%s ограничил частоту запросов с вашего адреса: пропущено %d. Найденное сохранено; "
+                              "ОКО само снизило темп — повторите поиск через 10–15 минут." % (label, n))
+        if limited:
+            self.notes.append("Если ограничения повторяются при каждом поиске, у вашего интернет-провайдера, вероятно, "
+                              "общий IP-адрес для многих абонентов (часто у мобильного интернета) — помогают другая сеть "
+                              "или VPN; можно также уменьшить «Лимит запросов к Google News» в Настройках.")
         took = (self.finished or time.time()) - self.started
         summary = dict(self.stats)
         summary.update(took=round(took, 1), notes=self.notes, cancelled=self.cancel.is_set() and not
