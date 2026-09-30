@@ -1,0 +1,7 @@
+# рабочие данные ОКО (создаются при запуске)
+data/state/
+data/cache/
+pdf/
+__pycache__/
+*.pyc
+*.tmp

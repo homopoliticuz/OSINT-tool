@@ -1,0 +1,1585 @@
+{
+  "_comment": "Встроенный мультиязычный словарь ОКО. terms — поисковые формы (первая — основная), match — дополнительные основы для локальной фильтрации (совпадение с начала слова), related — связанные сущности, добавляемые при включённом «расширенном словаре». Для отсутствующих языков ОКО использует Wikidata и машинный перевод.",
+  "entities": [
+    {
+      "id": "uzbekistan",
+      "label": "Узбекистан",
+      "aliases": [
+        "Республика Узбекистан",
+        "Republic of Uzbekistan",
+        "Узбекистана",
+        "Узбекистане",
+        "O'zbekiston Respublikasi"
+      ],
+      "related": [
+        "tashkent",
+        "mirziyoyev"
+      ],
+      "terms": {
+        "ru": [
+          "Узбекистан"
+        ],
+        "en": [
+          "Uzbekistan"
+        ],
+        "fr": [
+          "Ouzbékistan"
+        ],
+        "de": [
+          "Usbekistan"
+        ],
+        "es": [
+          "Uzbekistán"
+        ],
+        "it": [
+          "Uzbekistan"
+        ],
+        "ko": [
+          "우즈베키스탄",
+          "우즈벡"
+        ],
+        "ja": [
+          "ウズベキスタン"
+        ],
+        "zh": [
+          "乌兹别克斯坦"
+        ],
+        "zh-Hant": [
+          "烏茲別克",
+          "烏茲別克斯坦"
+        ],
+        "fa": [
+          "ازبکستان"
+        ],
+        "ar": [
+          "أوزبكستان"
+        ],
+        "ur": [
+          "ازبکستان"
+        ],
+        "tr": [
+          "Özbekistan"
+        ],
+        "uz": [
+          "Oʻzbekiston",
+          "Ўзбекистон"
+        ],
+        "he": [
+          "אוזבקיסטן"
+        ],
+        "hi": [
+          "उज़्बेकिस्तान"
+        ],
+        "kk": [
+          "Өзбекстан"
+        ],
+        "pt": [
+          "Uzbequistão"
+        ]
+      },
+      "match": {
+        "ru": [
+          "узбек",
+          "узбекистон",
+          "ўзбек"
+        ],
+        "en": [
+          "uzbek"
+        ],
+        "fr": [
+          "ouzbek"
+        ],
+        "de": [
+          "usbek"
+        ],
+        "es": [
+          "uzbek"
+        ],
+        "it": [
+          "uzbek"
+        ],
+        "ja": [
+          "ウズベク"
+        ],
+        "zh": [
+          "乌兹别克",
+          "烏茲別克"
+        ],
+        "fa": [
+          "ازبک"
+        ],
+        "ar": [
+          "اوزبك",
+          "أوزبك"
+        ],
+        "ur": [
+          "ازبک"
+        ],
+        "tr": [
+          "özbek"
+        ],
+        "uz": [
+          "o'zbek",
+          "ozbekiston",
+          "ўзбек",
+          "узбекистон"
+        ],
+        "he": [
+          "אוזבק"
+        ],
+        "hi": [
+          "उज्बेकिस्तान",
+          "उज़्बेक"
+        ],
+        "kk": [
+          "өзбек"
+        ],
+        "pt": [
+          "uzbequist",
+          "usbequist",
+          "uzbeque"
+        ]
+      },
+      "extra_match": {
+        "ru": [
+          "самарканд",
+          "бухара",
+          "бухарск",
+          "нукус",
+          "термез",
+          "наманган",
+          "андижан",
+          "каракалпак",
+          "навоийск",
+          "олий мажлис"
+        ],
+        "en": [
+          "samarkand",
+          "bukhara",
+          "khiva",
+          "nukus",
+          "termez",
+          "namangan",
+          "andijan",
+          "karakalpak",
+          "oliy majlis"
+        ],
+        "fr": [
+          "samarcande",
+          "boukhara",
+          "khiva",
+          "karakalpak"
+        ],
+        "de": [
+          "samarkand",
+          "buchara",
+          "chiwa",
+          "karakalpak"
+        ],
+        "es": [
+          "samarcanda",
+          "bujará",
+          "jiva",
+          "karakalpak"
+        ],
+        "it": [
+          "samarcanda",
+          "bukhara",
+          "khiva",
+          "karakalpak"
+        ],
+        "ko": [
+          "사마르칸트",
+          "부하라"
+        ],
+        "ja": [
+          "サマルカンド",
+          "ブハラ"
+        ],
+        "zh": [
+          "撒马尔罕",
+          "撒馬爾罕",
+          "布哈拉"
+        ],
+        "fa": [
+          "سمرقند",
+          "بخارا"
+        ],
+        "ar": [
+          "سمرقند"
+        ],
+        "ur": [
+          "سمرقند",
+          "بخارا"
+        ],
+        "tr": [
+          "semerkant",
+          "buhara",
+          "karakalpak"
+        ],
+        "uz": [
+          "samarqand",
+          "buxoro",
+          "xiva",
+          "qoraqalpog",
+          "самарқанд",
+          "бухоро"
+        ],
+        "he": [
+          "סמרקנד",
+          "בוכרה"
+        ],
+        "pt": [
+          "samarcanda"
+        ]
+      }
+    },
+    {
+      "id": "tashkent",
+      "label": "Ташкент",
+      "aliases": [
+        "Тошкент",
+        "Toshkent"
+      ],
+      "terms": {
+        "ru": [
+          "Ташкент"
+        ],
+        "en": [
+          "Tashkent"
+        ],
+        "fr": [
+          "Tachkent"
+        ],
+        "de": [
+          "Taschkent"
+        ],
+        "es": [
+          "Taskent",
+          "Tashkent"
+        ],
+        "it": [
+          "Tashkent"
+        ],
+        "ko": [
+          "타슈켄트"
+        ],
+        "ja": [
+          "タシケント"
+        ],
+        "zh": [
+          "塔什干"
+        ],
+        "zh-Hant": [
+          "塔什干"
+        ],
+        "fa": [
+          "تاشکند"
+        ],
+        "ar": [
+          "طشقند"
+        ],
+        "ur": [
+          "تاشقند"
+        ],
+        "tr": [
+          "Taşkent"
+        ],
+        "uz": [
+          "Toshkent",
+          "Тошкент"
+        ],
+        "he": [
+          "טשקנט"
+        ],
+        "hi": [
+          "ताशकंद"
+        ],
+        "kk": [
+          "Ташкент"
+        ],
+        "pt": [
+          "Tashkent"
+        ]
+      },
+      "match": {
+        "it": [
+          "taskent"
+        ],
+        "uz": [
+          "тошкент"
+        ]
+      }
+    },
+    {
+      "id": "mirziyoyev",
+      "label": "Шавкат Мирзиёев",
+      "aliases": [
+        "Мирзиёев",
+        "Мирзиеев",
+        "Шавкат Мирзиеев",
+        "Mirziyoyev",
+        "Shavkat Mirziyoyev"
+      ],
+      "terms": {
+        "ru": [
+          "Мирзиёев"
+        ],
+        "en": [
+          "Mirziyoyev"
+        ],
+        "fr": [
+          "Mirziyoyev"
+        ],
+        "de": [
+          "Mirsijojew",
+          "Mirziyoyev"
+        ],
+        "es": [
+          "Mirziyóyev"
+        ],
+        "it": [
+          "Mirziyoyev"
+        ],
+        "ko": [
+          "미르지요예프"
+        ],
+        "ja": [
+          "ミルジヨエフ"
+        ],
+        "zh": [
+          "米尔济约耶夫"
+        ],
+        "zh-Hant": [
+          "米爾濟約耶夫"
+        ],
+        "fa": [
+          "میرضیایف"
+        ],
+        "ar": [
+          "ميرضيائيف"
+        ],
+        "tr": [
+          "Mirziyoyev"
+        ],
+        "uz": [
+          "Mirziyoyev",
+          "Мирзиёев"
+        ],
+        "kk": [
+          "Мирзиёев"
+        ],
+        "pt": [
+          "Mirziyoyev"
+        ]
+      },
+      "match": {
+        "ru": [
+          "мирзиеев"
+        ],
+        "en": [
+          "mirziyoev"
+        ],
+        "fr": [
+          "mirzioïev",
+          "mirziyoev"
+        ],
+        "de": [
+          "mirziyoyev"
+        ],
+        "es": [
+          "mirziyoyev"
+        ],
+        "ja": [
+          "ミルジヨーエフ"
+        ],
+        "ar": [
+          "ميرزيوييف"
+        ],
+        "uz": [
+          "мирзиёев"
+        ]
+      }
+    },
+    {
+      "id": "central_asia",
+      "label": "Центральная Азия",
+      "aliases": [
+        "Средняя Азия",
+        "ЦА",
+        "Central Asian"
+      ],
+      "terms": {
+        "ru": [
+          "Центральная Азия",
+          "Средняя Азия"
+        ],
+        "en": [
+          "Central Asia"
+        ],
+        "fr": [
+          "Asie centrale"
+        ],
+        "de": [
+          "Zentralasien"
+        ],
+        "es": [
+          "Asia Central"
+        ],
+        "it": [
+          "Asia centrale"
+        ],
+        "ko": [
+          "중앙아시아"
+        ],
+        "ja": [
+          "中央アジア"
+        ],
+        "zh": [
+          "中亚"
+        ],
+        "zh-Hant": [
+          "中亞"
+        ],
+        "fa": [
+          "آسیای مرکزی"
+        ],
+        "ar": [
+          "آسيا الوسطى"
+        ],
+        "ur": [
+          "وسطی ایشیا"
+        ],
+        "tr": [
+          "Orta Asya"
+        ],
+        "uz": [
+          "Markaziy Osiyo"
+        ],
+        "he": [
+          "מרכז אסיה"
+        ],
+        "hi": [
+          "मध्य एशिया"
+        ],
+        "kk": [
+          "Орталық Азия"
+        ],
+        "pt": [
+          "Ásia Central"
+        ]
+      },
+      "match": {
+        "ru": [
+          "центральной азии",
+          "центральную азию",
+          "центральноазиат",
+          "средней азии"
+        ],
+        "en": [
+          "central asian"
+        ],
+        "fr": [
+          "centrasiat"
+        ],
+        "de": [
+          "zentralasiat"
+        ],
+        "es": [
+          "centroasiát"
+        ],
+        "it": [
+          "centroasiatic"
+        ]
+      }
+    },
+    {
+      "id": "karakalpakstan",
+      "label": "Каракалпакстан",
+      "aliases": [
+        "Республика Каракалпакстан",
+        "Qoraqalpog'iston"
+      ],
+      "terms": {
+        "ru": [
+          "Каракалпакстан"
+        ],
+        "en": [
+          "Karakalpakstan"
+        ],
+        "fr": [
+          "Karakalpakstan"
+        ],
+        "de": [
+          "Karakalpakistan"
+        ],
+        "es": [
+          "Karakalpakistán"
+        ],
+        "it": [
+          "Karakalpakstan"
+        ],
+        "tr": [
+          "Karakalpakistan"
+        ],
+        "uz": [
+          "Qoraqalpogʻiston"
+        ],
+        "pt": [
+          "Caracalpaquistão"
+        ]
+      },
+      "match": {
+        "ru": [
+          "каракалпак"
+        ],
+        "en": [
+          "karakalpak"
+        ],
+        "fr": [
+          "karakalpak"
+        ],
+        "de": [
+          "karakalpak"
+        ],
+        "es": [
+          "karakalpak"
+        ],
+        "it": [
+          "karakalpak"
+        ],
+        "tr": [
+          "karakalpak"
+        ],
+        "uz": [
+          "qoraqalpog"
+        ]
+      }
+    },
+    {
+      "id": "samarkand",
+      "label": "Самарканд",
+      "aliases": [
+        "Samarqand"
+      ],
+      "terms": {
+        "ru": [
+          "Самарканд"
+        ],
+        "en": [
+          "Samarkand"
+        ],
+        "fr": [
+          "Samarcande"
+        ],
+        "de": [
+          "Samarkand"
+        ],
+        "es": [
+          "Samarcanda"
+        ],
+        "it": [
+          "Samarcanda"
+        ],
+        "ko": [
+          "사마르칸트"
+        ],
+        "ja": [
+          "サマルカンド"
+        ],
+        "zh": [
+          "撒马尔罕"
+        ],
+        "zh-Hant": [
+          "撒馬爾罕"
+        ],
+        "fa": [
+          "سمرقند"
+        ],
+        "ar": [
+          "سمرقند"
+        ],
+        "ur": [
+          "سمرقند"
+        ],
+        "tr": [
+          "Semerkant"
+        ],
+        "uz": [
+          "Samarqand"
+        ],
+        "he": [
+          "סמרקנד"
+        ],
+        "hi": [
+          "समरकंद"
+        ],
+        "pt": [
+          "Samarcanda"
+        ]
+      }
+    },
+    {
+      "id": "bukhara",
+      "label": "Бухара",
+      "aliases": [
+        "Buxoro"
+      ],
+      "terms": {
+        "ru": [
+          "Бухара"
+        ],
+        "en": [
+          "Bukhara"
+        ],
+        "fr": [
+          "Boukhara"
+        ],
+        "de": [
+          "Buchara"
+        ],
+        "es": [
+          "Bujará"
+        ],
+        "it": [
+          "Bukhara"
+        ],
+        "ko": [
+          "부하라"
+        ],
+        "ja": [
+          "ブハラ"
+        ],
+        "zh": [
+          "布哈拉"
+        ],
+        "zh-Hant": [
+          "布哈拉"
+        ],
+        "fa": [
+          "بخارا"
+        ],
+        "ar": [
+          "بخارى"
+        ],
+        "ur": [
+          "بخارا"
+        ],
+        "tr": [
+          "Buhara"
+        ],
+        "uz": [
+          "Buxoro"
+        ],
+        "he": [
+          "בוכרה"
+        ],
+        "hi": [
+          "बुख़ारा"
+        ],
+        "pt": [
+          "Bukhara"
+        ]
+      },
+      "match": {
+        "ru": [
+          "бухарск"
+        ]
+      }
+    },
+    {
+      "id": "khiva",
+      "label": "Хива",
+      "aliases": [
+        "Xiva"
+      ],
+      "terms": {
+        "ru": [
+          "Хива"
+        ],
+        "en": [
+          "Khiva"
+        ],
+        "fr": [
+          "Khiva"
+        ],
+        "de": [
+          "Chiwa"
+        ],
+        "es": [
+          "Jiva"
+        ],
+        "it": [
+          "Khiva"
+        ],
+        "ko": [
+          "히바"
+        ],
+        "ja": [
+          "ヒヴァ"
+        ],
+        "zh": [
+          "希瓦"
+        ],
+        "fa": [
+          "خیوه"
+        ],
+        "ar": [
+          "خيوة"
+        ],
+        "tr": [
+          "Hive"
+        ],
+        "uz": [
+          "Xiva"
+        ]
+      }
+    },
+    {
+      "id": "aral_sea",
+      "label": "Аральское море",
+      "aliases": [
+        "Арал",
+        "Aral Sea"
+      ],
+      "terms": {
+        "ru": [
+          "Аральское море",
+          "Арал"
+        ],
+        "en": [
+          "Aral Sea"
+        ],
+        "fr": [
+          "mer d'Aral"
+        ],
+        "de": [
+          "Aralsee"
+        ],
+        "es": [
+          "mar de Aral"
+        ],
+        "it": [
+          "lago d'Aral"
+        ],
+        "ko": [
+          "아랄해"
+        ],
+        "ja": [
+          "アラル海"
+        ],
+        "zh": [
+          "咸海"
+        ],
+        "zh-Hant": [
+          "鹹海"
+        ],
+        "fa": [
+          "دریاچه آرال"
+        ],
+        "ar": [
+          "بحر آرال"
+        ],
+        "tr": [
+          "Aral Gölü"
+        ],
+        "uz": [
+          "Orol dengizi"
+        ],
+        "pt": [
+          "mar de Aral"
+        ]
+      },
+      "match": {
+        "ru": [
+          "аральск",
+          "арала"
+        ],
+        "de": [
+          "aralsee"
+        ]
+      }
+    },
+    {
+      "id": "amu_darya",
+      "label": "Амударья",
+      "aliases": [
+        "Amu Darya",
+        "Amudaryo"
+      ],
+      "terms": {
+        "ru": [
+          "Амударья"
+        ],
+        "en": [
+          "Amu Darya"
+        ],
+        "fr": [
+          "Amou-Daria"
+        ],
+        "de": [
+          "Amudarja"
+        ],
+        "es": [
+          "Amu Daria"
+        ],
+        "it": [
+          "Amu Darya"
+        ],
+        "ko": [
+          "아무다리야"
+        ],
+        "ja": [
+          "アムダリヤ"
+        ],
+        "zh": [
+          "阿姆河"
+        ],
+        "fa": [
+          "آمودریا"
+        ],
+        "ar": [
+          "أمو داريا"
+        ],
+        "tr": [
+          "Amuderya"
+        ],
+        "uz": [
+          "Amudaryo"
+        ]
+      }
+    },
+    {
+      "id": "syr_darya",
+      "label": "Сырдарья",
+      "aliases": [
+        "Syr Darya",
+        "Sirdaryo"
+      ],
+      "terms": {
+        "ru": [
+          "Сырдарья"
+        ],
+        "en": [
+          "Syr Darya"
+        ],
+        "fr": [
+          "Syr-Daria"
+        ],
+        "de": [
+          "Syrdarja"
+        ],
+        "es": [
+          "Sir Daria"
+        ],
+        "it": [
+          "Syr Darya"
+        ],
+        "ko": [
+          "시르다리야"
+        ],
+        "ja": [
+          "シルダリヤ"
+        ],
+        "zh": [
+          "锡尔河"
+        ],
+        "fa": [
+          "سیردریا"
+        ],
+        "ar": [
+          "سير داريا"
+        ],
+        "tr": [
+          "Siriderya"
+        ],
+        "uz": [
+          "Sirdaryo"
+        ]
+      }
+    },
+    {
+      "id": "fergana_valley",
+      "label": "Ферганская долина",
+      "aliases": [
+        "Фергана",
+        "Fergana Valley"
+      ],
+      "terms": {
+        "ru": [
+          "Ферганская долина"
+        ],
+        "en": [
+          "Fergana Valley"
+        ],
+        "fr": [
+          "vallée de Ferghana"
+        ],
+        "de": [
+          "Ferghanatal"
+        ],
+        "es": [
+          "valle de Fergana"
+        ],
+        "it": [
+          "valle di Fergana"
+        ],
+        "ko": [
+          "페르가나 분지"
+        ],
+        "ja": [
+          "フェルガナ盆地"
+        ],
+        "zh": [
+          "费尔干纳盆地"
+        ],
+        "fa": [
+          "دره فرغانه"
+        ],
+        "ar": [
+          "وادي فرغانة"
+        ],
+        "tr": [
+          "Fergana Vadisi"
+        ],
+        "uz": [
+          "Fargʻona vodiysi"
+        ]
+      },
+      "match": {
+        "ru": [
+          "ферганской долин"
+        ],
+        "en": [
+          "ferghana valley"
+        ]
+      }
+    },
+    {
+      "id": "afghanistan",
+      "label": "Афганистан",
+      "aliases": [
+        "Afghanistan"
+      ],
+      "terms": {
+        "ru": [
+          "Афганистан"
+        ],
+        "en": [
+          "Afghanistan"
+        ],
+        "fr": [
+          "Afghanistan"
+        ],
+        "de": [
+          "Afghanistan"
+        ],
+        "es": [
+          "Afganistán"
+        ],
+        "it": [
+          "Afghanistan"
+        ],
+        "ko": [
+          "아프가니스탄"
+        ],
+        "ja": [
+          "アフガニスタン"
+        ],
+        "zh": [
+          "阿富汗"
+        ],
+        "zh-Hant": [
+          "阿富汗"
+        ],
+        "fa": [
+          "افغانستان"
+        ],
+        "ar": [
+          "أفغانستان"
+        ],
+        "ur": [
+          "افغانستان"
+        ],
+        "tr": [
+          "Afganistan"
+        ],
+        "uz": [
+          "Afgʻoniston"
+        ],
+        "he": [
+          "אפגניסטן"
+        ],
+        "hi": [
+          "अफ़ग़ानिस्तान"
+        ],
+        "kk": [
+          "Ауғанстан"
+        ],
+        "pt": [
+          "Afeganistão"
+        ]
+      },
+      "match": {
+        "ru": [
+          "афган"
+        ],
+        "en": [
+          "afghan"
+        ],
+        "fr": [
+          "afghan"
+        ],
+        "de": [
+          "afghan"
+        ],
+        "es": [
+          "afgan"
+        ],
+        "it": [
+          "afghan"
+        ],
+        "tr": [
+          "afgan"
+        ]
+      }
+    },
+    {
+      "id": "kazakhstan",
+      "label": "Казахстан",
+      "aliases": [
+        "Kazakhstan"
+      ],
+      "terms": {
+        "ru": [
+          "Казахстан"
+        ],
+        "en": [
+          "Kazakhstan"
+        ],
+        "fr": [
+          "Kazakhstan"
+        ],
+        "de": [
+          "Kasachstan"
+        ],
+        "es": [
+          "Kazajistán"
+        ],
+        "it": [
+          "Kazakistan"
+        ],
+        "ko": [
+          "카자흐스탄"
+        ],
+        "ja": [
+          "カザフスタン"
+        ],
+        "zh": [
+          "哈萨克斯坦"
+        ],
+        "zh-Hant": [
+          "哈薩克"
+        ],
+        "fa": [
+          "قزاقستان"
+        ],
+        "ar": [
+          "كازاخستان"
+        ],
+        "ur": [
+          "قازقستان"
+        ],
+        "tr": [
+          "Kazakistan"
+        ],
+        "uz": [
+          "Qozogʻiston"
+        ],
+        "he": [
+          "קזחסטן"
+        ],
+        "kk": [
+          "Қазақстан"
+        ],
+        "pt": [
+          "Cazaquistão"
+        ]
+      },
+      "match": {
+        "ru": [
+          "казах"
+        ],
+        "en": [
+          "kazakh"
+        ],
+        "de": [
+          "kasach"
+        ],
+        "es": [
+          "kazaj"
+        ],
+        "it": [
+          "kazak"
+        ],
+        "tr": [
+          "kazak"
+        ]
+      }
+    },
+    {
+      "id": "kyrgyzstan",
+      "label": "Кыргызстан",
+      "aliases": [
+        "Киргизия",
+        "Kyrgyzstan"
+      ],
+      "terms": {
+        "ru": [
+          "Кыргызстан",
+          "Киргизия"
+        ],
+        "en": [
+          "Kyrgyzstan"
+        ],
+        "fr": [
+          "Kirghizistan"
+        ],
+        "de": [
+          "Kirgisistan"
+        ],
+        "es": [
+          "Kirguistán"
+        ],
+        "it": [
+          "Kirghizistan"
+        ],
+        "ko": [
+          "키르기스스탄"
+        ],
+        "ja": [
+          "キルギス"
+        ],
+        "zh": [
+          "吉尔吉斯斯坦"
+        ],
+        "zh-Hant": [
+          "吉爾吉斯"
+        ],
+        "fa": [
+          "قرقیزستان"
+        ],
+        "ar": [
+          "قيرغيزستان"
+        ],
+        "ur": [
+          "کرغزستان"
+        ],
+        "tr": [
+          "Kırgızistan"
+        ],
+        "uz": [
+          "Qirgʻiziston"
+        ],
+        "kk": [
+          "Қырғызстан"
+        ],
+        "pt": [
+          "Quirguistão"
+        ]
+      },
+      "match": {
+        "ru": [
+          "кыргыз",
+          "киргиз"
+        ],
+        "en": [
+          "kyrgyz"
+        ],
+        "de": [
+          "kirgis"
+        ],
+        "fr": [
+          "kirghiz"
+        ]
+      }
+    },
+    {
+      "id": "tajikistan",
+      "label": "Таджикистан",
+      "aliases": [
+        "Tajikistan"
+      ],
+      "terms": {
+        "ru": [
+          "Таджикистан"
+        ],
+        "en": [
+          "Tajikistan"
+        ],
+        "fr": [
+          "Tadjikistan"
+        ],
+        "de": [
+          "Tadschikistan"
+        ],
+        "es": [
+          "Tayikistán"
+        ],
+        "it": [
+          "Tagikistan"
+        ],
+        "ko": [
+          "타지키스탄"
+        ],
+        "ja": [
+          "タジキスタン"
+        ],
+        "zh": [
+          "塔吉克斯坦"
+        ],
+        "zh-Hant": [
+          "塔吉克"
+        ],
+        "fa": [
+          "تاجیکستان"
+        ],
+        "ar": [
+          "طاجيكستان"
+        ],
+        "ur": [
+          "تاجکستان"
+        ],
+        "tr": [
+          "Tacikistan"
+        ],
+        "uz": [
+          "Tojikiston"
+        ],
+        "kk": [
+          "Тәжікстан"
+        ],
+        "pt": [
+          "Tajiquistão"
+        ]
+      },
+      "match": {
+        "ru": [
+          "таджик"
+        ],
+        "en": [
+          "tajik"
+        ],
+        "fr": [
+          "tadjik"
+        ],
+        "de": [
+          "tadschik"
+        ]
+      }
+    },
+    {
+      "id": "turkmenistan",
+      "label": "Туркменистан",
+      "aliases": [
+        "Туркмения",
+        "Turkmenistan"
+      ],
+      "terms": {
+        "ru": [
+          "Туркменистан",
+          "Туркмения"
+        ],
+        "en": [
+          "Turkmenistan"
+        ],
+        "fr": [
+          "Turkménistan"
+        ],
+        "de": [
+          "Turkmenistan"
+        ],
+        "es": [
+          "Turkmenistán"
+        ],
+        "it": [
+          "Turkmenistan"
+        ],
+        "ko": [
+          "투르크메니스탄"
+        ],
+        "ja": [
+          "トルクメニスタン"
+        ],
+        "zh": [
+          "土库曼斯坦"
+        ],
+        "zh-Hant": [
+          "土庫曼"
+        ],
+        "fa": [
+          "ترکمنستان"
+        ],
+        "ar": [
+          "تركمانستان"
+        ],
+        "ur": [
+          "ترکمانستان"
+        ],
+        "tr": [
+          "Türkmenistan"
+        ],
+        "uz": [
+          "Turkmaniston"
+        ],
+        "kk": [
+          "Түрікменстан"
+        ],
+        "pt": [
+          "Turquemenistão"
+        ]
+      },
+      "match": {
+        "ru": [
+          "туркмен"
+        ],
+        "en": [
+          "turkmen"
+        ],
+        "fr": [
+          "turkmèn"
+        ],
+        "de": [
+          "turkmen"
+        ]
+      }
+    },
+    {
+      "id": "russia",
+      "label": "Россия",
+      "aliases": [
+        "РФ",
+        "Российская Федерация",
+        "Russia"
+      ],
+      "terms": {
+        "ru": [
+          "Россия"
+        ],
+        "en": [
+          "Russia"
+        ],
+        "fr": [
+          "Russie"
+        ],
+        "de": [
+          "Russland"
+        ],
+        "es": [
+          "Rusia"
+        ],
+        "it": [
+          "Russia"
+        ],
+        "ko": [
+          "러시아"
+        ],
+        "ja": [
+          "ロシア"
+        ],
+        "zh": [
+          "俄罗斯"
+        ],
+        "zh-Hant": [
+          "俄羅斯"
+        ],
+        "fa": [
+          "روسیه"
+        ],
+        "ar": [
+          "روسيا"
+        ],
+        "ur": [
+          "روس"
+        ],
+        "tr": [
+          "Rusya"
+        ],
+        "uz": [
+          "Rossiya"
+        ],
+        "he": [
+          "רוסיה"
+        ],
+        "hi": [
+          "रूस"
+        ],
+        "kk": [
+          "Ресей"
+        ],
+        "pt": [
+          "Rússia"
+        ]
+      },
+      "match": {
+        "ru": [
+          "росси",
+          "российск",
+          "москв"
+        ],
+        "en": [
+          "russian",
+          "moscow",
+          "kremlin"
+        ],
+        "de": [
+          "russisch"
+        ],
+        "fr": [
+          "russe"
+        ]
+      }
+    },
+    {
+      "id": "china",
+      "label": "Китай",
+      "aliases": [
+        "КНР",
+        "China",
+        "PRC"
+      ],
+      "terms": {
+        "ru": [
+          "Китай"
+        ],
+        "en": [
+          "China"
+        ],
+        "fr": [
+          "Chine"
+        ],
+        "de": [
+          "China"
+        ],
+        "es": [
+          "China"
+        ],
+        "it": [
+          "Cina"
+        ],
+        "ko": [
+          "중국"
+        ],
+        "ja": [
+          "中国"
+        ],
+        "zh": [
+          "中国"
+        ],
+        "zh-Hant": [
+          "中國"
+        ],
+        "fa": [
+          "چین"
+        ],
+        "ar": [
+          "الصين"
+        ],
+        "ur": [
+          "چین"
+        ],
+        "tr": [
+          "Çin"
+        ],
+        "uz": [
+          "Xitoy"
+        ],
+        "he": [
+          "סין"
+        ],
+        "hi": [
+          "चीन"
+        ],
+        "kk": [
+          "Қытай"
+        ],
+        "pt": [
+          "China"
+        ]
+      },
+      "match": {
+        "ru": [
+          "китай",
+          "кнр",
+          "пекин"
+        ],
+        "en": [
+          "chinese",
+          "beijing"
+        ],
+        "de": [
+          "chinesisch"
+        ],
+        "fr": [
+          "chinois"
+        ]
+      }
+    },
+    {
+      "id": "sco",
+      "label": "ШОС",
+      "aliases": [
+        "Шанхайская организация сотрудничества",
+        "SCO",
+        "Shanghai Cooperation Organisation"
+      ],
+      "terms": {
+        "ru": [
+          "ШОС",
+          "Шанхайская организация сотрудничества"
+        ],
+        "en": [
+          "Shanghai Cooperation Organisation",
+          "Shanghai Cooperation Organization"
+        ],
+        "fr": [
+          "Organisation de coopération de Shanghai"
+        ],
+        "de": [
+          "Shanghaier Organisation für Zusammenarbeit"
+        ],
+        "es": [
+          "Organización de Cooperación de Shanghái"
+        ],
+        "it": [
+          "Organizzazione per la cooperazione di Shanghai"
+        ],
+        "ko": [
+          "상하이협력기구"
+        ],
+        "ja": [
+          "上海協力機構"
+        ],
+        "zh": [
+          "上海合作组织",
+          "上合组织"
+        ],
+        "zh-Hant": [
+          "上海合作組織"
+        ],
+        "fa": [
+          "سازمان همکاری شانگهای"
+        ],
+        "ar": [
+          "منظمة شنغهاي للتعاون"
+        ],
+        "tr": [
+          "Şanghay İşbirliği Örgütü"
+        ],
+        "uz": [
+          "Shanxay hamkorlik tashkiloti"
+        ]
+      }
+    }
+  ]
+}

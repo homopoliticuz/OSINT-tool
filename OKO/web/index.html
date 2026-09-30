@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="oko-token" content="">
+<title>ОКО — мониторинг аналитических источников</title>
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Noto+Naskh+Arabic:wght@400;600&family=Noto+Nastaliq+Urdu&family=Noto+Sans+Devanagari&family=Noto+Sans+Hebrew&family=Noto+Sans+JP:wght@400;500&family=Noto+Sans+KR:wght@400;500&family=Noto+Sans+SC:wght@400;500&family=Noto+Sans+TC:wght@400;500&display=swap">
+<link rel="stylesheet" href="assets/oko.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <svg viewBox="0 0 68 40" aria-hidden="true"><path d="M3 20C12 7 22 2 34 2s22 5 31 18c-9 13-19 18-31 18S12 33 3 20z" fill="none" stroke="#c9a227" stroke-width="2.6" stroke-linejoin="round"/><circle cx="34" cy="20" r="9.5" fill="none" stroke="#e3bd4b" stroke-width="2.6"/><circle cx="34" cy="20" r="3.4" fill="#e3bd4b"/></svg>
+    <span class="logo">ОКО</span>
+    <span class="sub">мониторинг аналитических источников</span>
+  </div>
+  <div class="status" id="status"><span class="dot"></span><span>подключение…</span></div>
+  <nav class="topnav" id="topnav">
+    <button data-view="results" class="active">Лента</button>
+    <button data-view="dossier">Досье <span class="badge" id="dossierCount">0</span></button>
+    <button data-view="archive">Архив</button>
+    <button data-view="sources">Источники</button>
+    <button data-view="settings">Настройки</button>
+    <button data-view="help">Справка</button>
+  </nav>
+</header>
+
+<div id="banner"></div>
+
+<section class="query" id="query">
+  <div class="qrow">
+    <div class="field"><span>Тема</span><input id="qTopic" autocomplete="off" spellcheck="false" placeholder="Узбекистан" value="Узбекистан" title="Ключевое слово или фраза на любом языке. Несколько тем — через запятую (ИЛИ)"></div>
+    <div class="field"><span>и</span><input id="qCtx" autocomplete="off" spellcheck="false" placeholder="контекст: газ, Китай…" title="Уточнение: материал должен касаться также этого (И). Через запятую — любое из"></div>
+    <div class="field"><span>не</span><input id="qNot" autocomplete="off" spellcheck="false" placeholder="исключить…" title="Исключить материалы с этими словами"></div>
+    <button class="btn primary" id="btnSearch" title="Enter">НАЙТИ</button>
+    <button class="btn danger hidden" id="btnStop">Остановить</button>
+  </div>
+  <div class="qrow">
+    <span class="qlabel">Период</span>
+    <div class="seg" id="presets">
+      <button data-p="today">Сегодня</button><button data-p="yesterday">Вчера</button><button data-p="24h">24 ч</button><button data-p="3d">3 дня</button><button data-p="7d">Неделя</button><button data-p="30d">Месяц</button>
+    </div>
+    <input type="date" id="dFrom" title="Начало периода"><span class="muted">—</span><input type="date" id="dTo" title="Конец периода">
+    <span class="muted" id="periodHint"></span>
+  </div>
+  <div class="qrow">
+    <span class="qlabel">Языки</span>
+    <div class="chips" id="langChips"></div>
+    <button class="btn small ghost" id="btnTerms" title="Показать и отредактировать поисковые термины по языкам">Термины ▾</button>
+    <label class="check" title="Добавлять столицу, главу государства и ключевые города (для тем из словаря)"><input type="checkbox" id="optRelated" checked> связанные термины</label>
+  </div>
+  <div class="qrow">
+    <span class="qlabel">Источники</span>
+    <div class="seg" id="modeSeg">
+      <button data-m="registry" class="on" title="Только аналитические центры, международные организации, официальные источники и издания из реестра">Аналитика и авторитетные издания</button>
+      <button data-m="broad" title="Все найденные материалы, включая источники вне реестра (уровень D)">Широкий охват</button>
+    </div>
+    <label class="check">уровень
+      <select id="minTier"><option value="4">все</option><option value="3">A–C</option><option value="2">A–B</option><option value="1">только A</option></select>
+    </label>
+    <div class="dropdown"><button class="btn small" id="btnTypes">Категории: все ▾</button><div class="menu hidden" id="menuTypes"></div></div>
+    <div class="dropdown"><button class="btn small" id="btnProv">Каналы поиска ▾</button><div class="menu hidden" id="menuProv"></div></div>
+  </div>
+</section>
+
+<section class="terms hidden" id="termsPanel">
+  <div class="terms-head"><h3>Поисковые термины по языкам</h3><span class="entity" id="entityInfo"></span>
+    <span style="margin-left:auto"></span>
+    <button class="btn small" id="btnReExpand">Перевести заново</button>
+    <button class="btn small" id="btnTermsClose">Свернуть</button></div>
+  <table class="tterms" id="termsTable"></table>
+  <div class="muted" style="font-size:12px;margin-top:8px">Правка термина сохраняется в глоссарий и используется в следующих поисках. Источник: <span class="srcTag lexicon">словарь</span> <span class="srcTag wikidata">Wikidata</span> <span class="srcTag mt">перевод</span> <span class="srcTag user">вручную</span></div>
+</section>
+
+<section class="progress hidden" id="progress">
+  <div class="pbar"><div id="pbarFill"></div></div>
+  <div class="pline" id="pline"></div>
+  <div class="plog hidden" id="plog"></div>
+  <div class="notes" id="pnotes"></div>
+</section>
+
+<main class="layout" id="view-results">
+  <aside class="facets" id="facets"></aside>
+  <section class="results">
+    <div class="rtool">
+      <button class="btn small mob-only" id="btnFacets">Фильтры</button>
+      <span class="rcount" id="rcount"></span>
+      <input class="input rfilter" id="rFilter" placeholder="Поиск по результатам…">
+      <select id="sortSel" title="Сортировка"><option value="authority">по авторитетности</option><option value="date">по дате</option><option value="relevance">по релевантности</option></select>
+      <div class="seg" id="viewSeg"><button data-v="list" class="on">Лента</button><button data-v="stories">Сюжеты</button><button data-v="tiers">По уровням</button></div>
+      <div class="dropdown"><button class="btn small" id="btnExport">Экспорт ▾</button><div class="menu right hidden" id="menuExport"></div></div>
+      <button class="btn small" id="btnDigest" title="Сводка для печати или сохранения в PDF">PDF-сводка</button>
+    </div>
+    <div class="list" id="list"></div>
+  </section>
+  <aside class="detail closed" id="detail"></aside>
+</main>
+
+<section class="page hidden" id="view-dossier"></section>
+<section class="page hidden" id="view-archive"></section>
+<section class="page hidden" id="view-sources"></section>
+<section class="page hidden" id="view-settings"></section>
+<section class="page hidden help" id="view-help"></section>
+
+<script src="assets/oko-data.js"></script>
+<script src="assets/oko-core.js"></script>
+<script src="assets/oko-app.js"></script>
+</body>
+</html>

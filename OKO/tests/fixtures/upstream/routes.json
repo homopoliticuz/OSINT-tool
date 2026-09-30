@@ -1,0 +1,158 @@
+[
+ {
+  "pattern": "news\\.google\\.com/(rss/)?articles/CBMiIEFVX3lxTE9LT1RFU1RuZXdmb3JtYXQwMTIzNDU2Nzg50gEA",
+  "file": "gn_article_new.html",
+  "content_type": "text/html; charset=utf-8"
+ },
+ {
+  "pattern": "news\\.google\\.com/_/DotsSplashUi/data/batchexecute",
+  "file": "batchexecute.txt",
+  "content_type": "application/json; charset=utf-8"
+ },
+ {
+  "pattern": "news\\.google\\.com/rss/search\\?q=[^&]*site%3A.*hl=en-US",
+  "file": "gn_en_sites.xml"
+ },
+ {
+  "pattern": "news\\.google\\.com/rss/search\\?q=[^&]*site%3A",
+  "file": "gn_empty.xml"
+ },
+ {
+  "pattern": "news\\.google\\.com/rss/search\\?.*hl=en-US&gl=US",
+  "file": "gn_en.xml"
+ },
+ {
+  "pattern": "news\\.google\\.com/rss/search\\?.*hl=ru&gl=RU",
+  "file": "gn_ru.xml"
+ },
+ {
+  "pattern": "news\\.google\\.com/rss/search\\?.*hl=zh-CN",
+  "file": "gn_zh.xml"
+ },
+ {
+  "pattern": "news\\.google\\.com/rss/search\\?.*hl=ja&gl=JP",
+  "file": "gn_ja.xml"
+ },
+ {
+  "pattern": "news\\.google\\.com/rss/search\\?.*hl=ar&gl=SA",
+  "file": "gn_ar.xml"
+ },
+ {
+  "pattern": "news\\.google\\.com/rss/search",
+  "file": "gn_empty.xml"
+ },
+ {
+  "pattern": "api\\.gdeltproject\\.org/.*sourcelang%3Arussian",
+  "file": "gdelt_ru.json",
+  "content_type": "application/json"
+ },
+ {
+  "pattern": "api\\.gdeltproject\\.org/.*sourcelang",
+  "file": "gdelt_empty.json",
+  "content_type": "application/json"
+ },
+ {
+  "pattern": "api\\.gdeltproject\\.org/",
+  "file": "gdelt_all.json",
+  "content_type": "application/json"
+ },
+ {
+  "pattern": "www\\.bing\\.com/news/search\\?.*setlang=en",
+  "file": "bing.xml"
+ },
+ {
+  "pattern": "www\\.bing\\.com/news/search",
+  "file": "generic.xml"
+ },
+ {
+  "pattern": "api\\.openalex\\.org/works",
+  "file": "openalex.json",
+  "content_type": "application/json"
+ },
+ {
+  "pattern": "search\\.worldbank\\.org/api/v2/wds",
+  "file": "worldbank.json",
+  "content_type": "application/json"
+ },
+ {
+  "pattern": "www\\.gov\\.uk/search/all\\.atom",
+  "file": "govuk.atom",
+  "content_type": "application/atom+xml"
+ },
+ {
+  "pattern": "atlanticcouncil\\.org/wp-json/wp/v2/posts",
+  "file": "wp_ac.json",
+  "content_type": "application/json"
+ },
+ {
+  "pattern": "/wp-json/wp/v2/posts",
+  "body": "[]",
+  "content_type": "application/json"
+ },
+ {
+  "pattern": "wikidata\\.org/w/api\\.php\\?action=wbsearchentities",
+  "file": "wikidata_search.json",
+  "content_type": "application/json"
+ },
+ {
+  "pattern": "wikidata\\.org/w/api\\.php\\?action=wbgetentities",
+  "file": "wikidata_entity.json",
+  "content_type": "application/json"
+ },
+ {
+  "pattern": "translate\\.googleapis\\.com",
+  "file": "mt_gas.json",
+  "content_type": "application/json"
+ },
+ {
+  "pattern": "^https://www\\.brookings\\.edu/feed/$",
+  "file": "brookings.xml"
+ },
+ {
+  "pattern": "^https://www\\.kommersant\\.ru/RSS/news\\.xml$",
+  "file": "kommersant.xml",
+  "content_type": "application/rss+xml"
+ },
+ {
+  "pattern": "^https://kun\\.uz/ru/news/rss$",
+  "file": "kunuz.xml"
+ },
+ {
+  "pattern": "^https://www\\.gazeta\\.uz/ru/rss/$",
+  "file": "gazeta.xml"
+ },
+ {
+  "pattern": "^https://theconversation\\.com/global/articles\\.atom$",
+  "file": "conversation.atom",
+  "content_type": "application/atom+xml"
+ },
+ {
+  "pattern": "^https://www\\.asahi\\.com/rss/asahi/newsheadlines\\.rdf$",
+  "file": "asahi.rdf",
+  "content_type": "application/rdf+xml"
+ },
+ {
+  "pattern": "(/feed/?$|/rss|\\.rss$|\\.xml|\\.rdf$|\\.atom$|format=rss|outboundfeeds)",
+  "file": "generic.xml"
+ },
+ {
+  "pattern": "^https://www\\.reuters\\.com/world/",
+  "file": "page_reuters.html",
+  "content_type": "text/html; charset=utf-8"
+ },
+ {
+  "pattern": "^https://www\\.yahoo\\.com/news/",
+  "file": "page_yahoo.html",
+  "content_type": "text/html; charset=utf-8"
+ },
+ {
+  "pattern": "^https://lenta\\.ru/news/",
+  "file": "page_lenta.html",
+  "content_type": "text/html; charset=utf-8"
+ },
+ {
+  "pattern": "^https://www\\.kommersant\\.ru/doc/",
+  "file": "page_kommersant.html",
+  "content_type": "text/html; charset=utf-8"
+ }
+]
