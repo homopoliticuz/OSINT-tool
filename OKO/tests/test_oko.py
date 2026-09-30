@@ -541,6 +541,44 @@ class TestServerIntegration(unittest.TestCase):
         rep = json.load(self.call("/api/reports/" + urllib.request.quote(done["report"])))
         self.assertEqual(len(rep["items"]), len(items))
 
+    def _stream(self, params):
+        items, done = {}, None
+        for block in self.call("/api/search", params).read().decode("utf-8").split("\n\n"):
+            ev = data = None
+            for line in block.split("\n"):
+                if line.startswith("event:"):
+                    ev = line[6:].strip()
+                elif line.startswith("data:"):
+                    data = json.loads(line[5:])
+            if ev == "items":
+                for it in data:
+                    items[it["id"]] = it
+            elif ev == "done":
+                done = data
+        return items, done
+
+    def test_reports_mode(self):
+        now = int(time.time())
+        items, done = self._stream({"mode": "reports", "topics": [], "langs": ["en"], "plan": {},
+                                    "t_from": now - 7 * 86400, "t_to": now})
+        self.assertIsNotNone(done)
+        by_title = {it["title"]: it for it in items.values()}
+        hdr = by_title["UNDP launches Human Development Report 2026: inequality widens"]
+        self.assertEqual((hdr["kind"], hdr["extra"]["report"]), ("report", "hdr"))
+        self.assertEqual(by_title["Global Peace Index 2026: Central Asia among most improved regions"]["extra"]["report"], "gpi")
+        self.assertNotIn("Celebrity chef opens new restaurant in Paris", by_title)   # не доклад
+
+    def test_watch_mode(self):
+        now = int(time.time())
+        items, done = self._stream({"mode": "watch", "topics": [], "langs": ["ru", "en", "uz"], "plan": {},
+                                    "sources": ["kun_uz"], "channels": [{"platform": "telegram", "id": "kunuzofficial"}],
+                                    "t_from": now - 86400, "t_to": now})
+        self.assertIsNotNone(done)
+        urls = {it["url"] for it in items.values()}
+        self.assertIn("https://t.me/kunuzofficial/90003", urls)      # в мониторинге — все публикации, не только по теме
+        self.assertTrue(any("kun.uz" in u for u in urls))
+        self.assertFalse(any("reuters" in u for u in urls))          # только выбранные источники
+
     def test_article_mentions(self):
         # поисковик нашёл статью, где тема не видна в заголовке: проверяем упоминания на странице
         m = json.load(self.call("/api/article", {
@@ -626,6 +664,134 @@ class TestServerIntegration(unittest.TestCase):
         self.assertTrue(m["ok"])
         self.assertEqual(m["canonical_domain"], "reuters.com")
         self.assertEqual(m["canonical_source"], "reuters")
+
+
+def _lan_ip():
+    sys.path.insert(0, ROOT)
+    import oko
+    ips = [ip for ip in oko.lan_addresses() if not ip.startswith("127.")]
+    return ips[0] if ips else None
+
+
+@unittest.skipUnless(_lan_ip(), "нет сетевого интерфейса, кроме loopback")
+class TestLan(unittest.TestCase):
+    """Доступ с телефона: вход по паролю, защита от подмены Host, локальный доступ без пароля."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.mkdtemp()
+        os.makedirs(os.path.join(cls.tmp, "state"))
+        with open(os.path.join(cls.tmp, "state", "settings.json"), "w") as f:
+            json.dump({"lan_password": "correct horse 12"}, f)
+        cls.port = _free_port()
+        cls.proc = subprocess.Popen([sys.executable, os.path.join(ROOT, "oko.py"), "--no-browser", "--lan", "--port",
+                                     str(cls.port), "--data", cls.tmp, "--fixtures", FIX],
+                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        cls.ip = _lan_ip()
+        cls.remote = "http://%s:%d" % (cls.ip, cls.port)
+        for _ in range(50):
+            try:
+                urllib.request.urlopen("http://127.0.0.1:%d/" % cls.port, timeout=2).read()
+                break
+            except OSError:
+                time.sleep(0.2)
+
+        class NoRedirect(urllib.request.HTTPRedirectHandler):
+            def redirect_request(self, *a, **kw):
+                return None
+        cls.opener = urllib.request.build_opener(NoRedirect)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.proc.terminate()
+        cls.proc.wait(5)
+        if cls.proc.stdout:
+            cls.proc.stdout.close()
+        shutil.rmtree(cls.tmp, ignore_errors=True)
+
+    def req(self, path, data=None, headers=None):
+        r = urllib.request.Request(self.remote + path, data=data, headers=headers or {})
+        try:
+            resp = self.opener.open(r, timeout=10)
+            return resp.status, dict(resp.headers), resp.read()
+        except urllib.error.HTTPError as e:
+            return e.code, dict(e.headers), e.read()
+
+    def test_login_flow(self):
+        st, h, _ = self.req("/")
+        self.assertEqual((st, h.get("Location")), (303, "/login"))
+        self.assertEqual(self.req("/api/bootstrap")[0], 401)
+        self.assertEqual(self.req("/assets/oko.css")[0], 200)
+        self.assertEqual(self.req("/login", b"password=wrong")[0], 401)
+        st, h, _ = self.req("/login", b"password=correct+horse+12")
+        self.assertEqual(st, 303)
+        cookie = h["Set-Cookie"].split(";")[0]
+        self.assertIn("HttpOnly", h["Set-Cookie"])
+        st, _, body = self.req("/", headers={"Cookie": cookie})
+        self.assertEqual(st, 200)
+        self.assertIn(b'name="oko-token" content="', body)
+        token = body.decode().split('name="oko-token" content="')[1].split('"')[0]
+        st, _, body = self.req("/api/health", headers={"Cookie": cookie, "X-OKO-Token": token})
+        self.assertEqual(st, 200)
+        # подмена Host (DNS rebinding) — отказ
+        self.assertEqual(self.req("/", headers={"Host": "evil.example:%d" % self.port, "Cookie": cookie})[0], 421)
+        # с этого же компьютера — без пароля
+        body = urllib.request.urlopen("http://127.0.0.1:%d/" % self.port, timeout=5).read()
+        self.assertIn(b'name="oko-token"', body)
+
+    def test_login_rate_limit(self):
+        codes = [self.req("/login", b"password=nope%d" % i)[0] for i in range(7)]
+        self.assertIn(429, codes)
+
+
+class TestTelegramBot(unittest.TestCase):
+    """Бот на фикстурах: доступ только разрешённым, поиск по теме → сообщение и HTML-сводка."""
+
+    @classmethod
+    def setUpClass(cls):
+        from okolib.server import App
+        from okolib.tgbot import TgBot
+        cls.tmp = tempfile.mkdtemp()
+        cls.app = App(ROOT, data_dir=cls.tmp, fixtures=FIX, port=_free_port())
+        cls.app.state.update_settings({"tg_bot_allowed": [111], "tg_bot_topic": "Узбекистан"})
+        cls.bot = TgBot(cls.app)
+        cls.calls = []
+        cls.bot.api = lambda method, params=None, files=None, timeout=20: cls.calls.append((method, params, files))
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.tmp, ignore_errors=True)
+
+    def msg(self, uid, text):
+        self.calls.clear()
+        self.bot.handle({"chat": {"id": uid}, "from": {"id": uid}, "text": text})
+        return [c for c in self.calls if c[0] == "sendMessage"], [c for c in self.calls if c[0] == "sendDocument"]
+
+    def test_access_and_help(self):
+        sent, _ = self.msg(999, "Узбекистан")
+        self.assertIn("Доступ запрещён", sent[0][1]["text"])
+        self.assertIn("999", sent[0][1]["text"])
+        sent, _ = self.msg(111, "/start")
+        self.assertIn("доступ разрешён", sent[0][1]["text"])
+
+    def test_search_digest(self):
+        sent, docs = self.msg(111, "Узбекистан")
+        text = "\n".join(c[1]["text"] for c in sent)
+        self.assertIn("ОКО · Узбекистан", text)
+        self.assertIn("[A]", text)
+        self.assertIn("⌕", text)                                   # по какому слову найдено
+        self.assertEqual(len(docs), 1)
+        name, content, ctype = docs[0][2]["document"]
+        self.assertTrue(name.endswith(".html"))
+        self.assertIn("Уровень A", content.decode("utf-8"))
+
+    def test_digest_schedule(self):
+        sent, _ = self.msg(111, "/digest 08:30 Центральная Азия")
+        self.assertIn("08:30", sent[0][1]["text"])
+        dig = self.app.state.settings()["tg_bot_digest"]
+        self.assertEqual(dig[-1], {"chat": 111, "time": "08:30", "topic": "Центральная Азия"})
+        self.msg(111, "/digest off")
+        self.assertEqual(self.app.state.settings()["tg_bot_digest"], [])
 
 
 class TestJsParity(unittest.TestCase):

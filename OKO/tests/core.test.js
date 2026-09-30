@@ -119,3 +119,23 @@ test('библиографическая ссылка', () => {
   assert.match(c, /^A\. Author\. Uzbekistan outlook \/\/ Center for Strategic and International Studies/);
   assert.match(c, /дата обращения: 30\.09\.2026/);
 });
+
+test('соответствие теме: как okolib/relevance.py', () => {
+  assert.strictEqual(C.relevance({ hit: 'title', role: 'main' }), 'title');
+  assert.strictEqual(C.relevance({ hit: 'title', role: 'related' }), 'rtitle');
+  assert.strictEqual(C.relevance({ hit: 'text', role: 'form' }), 'text');
+  assert.strictEqual(C.relevance({ hit: 'engine' }), 'unverified');
+  assert.strictEqual(C.relevance({ hit: 'engine' }, { paras: 8, hits: 2, first: 5 }), 'body');
+  assert.strictEqual(C.relevance({ hit: 'engine' }, { paras: 8, hits: 1, first: 0 }), 'body');
+  assert.strictEqual(C.relevance({ hit: 'engine' }, { paras: 8, hits: 1, first: 6 }), 'passing');
+  assert.strictEqual(C.relevance({ hit: 'engine' }, { paras: 8, hits: 0, first: null }), 'absent');
+  assert.ok(C.REL_STRICT.has('body') && !C.REL_STRICT.has('passing') && !C.REL_STRICT.has('unverified'));
+});
+
+test('соцсети: репост — перепубликация с первоисточником, своя публикация — оригинал', () => {
+  const [fwd, own] = run([
+    item({ kind: 'social', domain: 't.me', src_name: 'Kun.uz', title: 'Mirziyoyev signed', extra: { platform: 'telegram', fwd: { name: 'Prezident matbuot xizmati', url: 'https://t.me/prezidentpress/1' } } }),
+    item({ kind: 'social', domain: 't.me', src_name: 'Kun.uz', title: 'Uzbekistan news', source_id: 'kun_uz', extra: { platform: 'telegram' } })]);
+  assert.deepStrictEqual([fwd.type, fwd.origin.status, fwd.origin.credited.label], ['social', 'reprint', 'Prezident matbuot xizmati']);
+  assert.deepStrictEqual([own.type, own.origin.status, own.tier], ['social', 'primary', 2]);
+});

@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import html
+import ipaddress
 import json
 import logging
 import mimetypes
@@ -59,6 +60,8 @@ class App:
         self.bot = tgbot.TgBot(self)
         self.lan = False
         self.lan_urls: list[str] = []
+        self.sessions: dict[str, float] = {}      # вход с других устройств: сессия → срок действия
+        self.login_fails: dict[str, list] = {}
         self.jobs: dict[str, SearchJob] = {}
         self.jobs_lock = threading.Lock()
         self.fixtures = bool(fixtures)
@@ -73,7 +76,8 @@ class App:
             if self.state.settings().get("auto_discovery", True):
                 self.registry.run_discovery(only_stale=True, workers=10)
         threading.Thread(target=worker, name="oko-discovery", daemon=True).start()
-        self.bot.start()
+        if not self.fixtures:
+            self.bot.start()
 
     def bootstrap(self) -> dict:
         return {
@@ -107,7 +111,61 @@ class Handler(BaseHTTPRequestHandler):
     def _host_ok(self) -> bool:
         host = (self.headers.get("Host") or "").lower()
         allowed = {"127.0.0.1:%d" % self.app.port, "localhost:%d" % self.app.port, "[::1]:%d" % self.app.port}
-        return host in allowed
+        if host in allowed:
+            return True
+        if not self.app.lan:
+            return False
+        # доступ из домашней сети — только по IP-адресу (защита от подмены DNS)
+        name, _, port = host.rpartition(":")
+        if port != str(self.app.port):
+            return False
+        try:
+            ip = ipaddress.ip_address(name.strip("[]"))
+        except ValueError:
+            return False
+        return ip.is_private or ip.is_loopback or ip.is_link_local
+
+    def _local_client(self) -> bool:
+        return self.client_address[0] in ("127.0.0.1", "::1", "::ffff:127.0.0.1")
+
+    def _session_ok(self) -> bool:
+        if self._local_client():
+            return True
+        c = self.headers.get("Cookie") or ""
+        m = re.search(r"(?:^|;\s*)oko_s=([A-Za-z0-9_\-]+)", c)
+        if not m:
+            return False
+        exp = self.app.sessions.get(m.group(1))
+        return bool(exp and exp > time.time())
+
+    def _login(self, method: str):
+        app = self.app
+        if method == "GET":
+            return self._send(200, LOGIN_PAGE.replace("{{MSG}}", "").encode("utf-8"), "text/html; charset=utf-8",
+                              {"Cache-Control": "no-store"})
+        ip = self.client_address[0]
+        now = time.time()
+        fails = [t for t in app.login_fails.get(ip, []) if now - t < 300]
+        if len(fails) >= 5:
+            return self._send(429, LOGIN_PAGE.replace("{{MSG}}", "Слишком много попыток — подождите 5 минут.")
+                              .encode("utf-8"), "text/html; charset=utf-8")
+        n = int(self.headers.get("Content-Length") or 0)
+        form = parse_qs(self.rfile.read(min(n, 4096)).decode("utf-8", "replace"))
+        pw = (form.get("password") or [""])[0]
+        real = app.state.settings().get("lan_password") or ""
+        if real and len(real) >= 8 and secrets.compare_digest(pw.encode(), real.encode()):
+            sid = secrets.token_urlsafe(32)
+            app.sessions[sid] = now + 30 * 86400
+            self.send_response(303)
+            self.send_header("Location", "/")
+            self.send_header("Set-Cookie", "oko_s=%s; Path=/; Max-Age=2592000; HttpOnly; SameSite=Strict" % sid)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return None
+        fails.append(now)
+        app.login_fails[ip] = fails
+        return self._send(401, LOGIN_PAGE.replace("{{MSG}}", "Неверный пароль.").encode("utf-8"),
+                          "text/html; charset=utf-8")
 
     def _token_ok(self, qs) -> bool:
         tok = self.headers.get("X-OKO-Token") or (qs.get("t") or [""])[0]
@@ -161,6 +219,16 @@ class Handler(BaseHTTPRequestHandler):
         parts = urlsplit(self.path)
         path, qs = unquote(parts.path), parse_qs(parts.query)
         try:
+            if path == "/login" and self.app.lan:
+                return self._login(method)
+            if not self._session_ok() and not path.startswith("/assets/") and path != "/favicon.ico":
+                if path.startswith("/api/"):
+                    return self._err(401, "нужен вход: откройте ОКО заново")
+                self.send_response(303)
+                self.send_header("Location", "/login")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return None
             if method in ("GET", "HEAD") and (path == "/" or path == "/index.html"):
                 return self._index()
             if method in ("GET", "HEAD") and path.startswith("/assets/"):
@@ -507,6 +575,20 @@ class Handler(BaseHTTPRequestHandler):
         name = os.path.basename(path)
         return {"ok": True, "name": name, "href": "/files/pdf/%s?t=%s" % (quote(name), app.token),
                 "path": os.path.abspath(path)}
+
+
+LOGIN_PAGE = """<!doctype html><html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#090c11">
+<title>ОКО — вход</title><link rel="manifest" href="/assets/manifest.webmanifest"><link rel="icon" href="/assets/favicon.svg">
+<style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#090c11;color:#e3e8ee;
+font:15px system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}form{width:min(340px,90vw);display:grid;gap:12px;padding:26px;
+border:1px solid #2a3543;border-radius:6px;background:#11161e}b{letter-spacing:.3em;color:#e3bd4b;font-size:20px}
+input{padding:11px;border-radius:4px;border:1px solid #2a3543;background:#0d1117;color:#e3e8ee;font-size:16px}
+button{padding:11px;border:0;border-radius:4px;background:#c9a227;color:#111;font-weight:600;letter-spacing:.12em;font-size:15px}
+.m{color:#ff9c95;font-size:13px;min-height:1em}.s{color:#7e8997;font-size:12.5px}</style></head><body>
+<form method="post" action="/login"><b>ОКО</b><span class="s">Вход с другого устройства домашней сети</span>
+<input type="password" name="password" placeholder="пароль" autofocus autocomplete="current-password">
+<button type="submit">ВОЙТИ</button><span class="m">{{MSG}}</span></form></body></html>"""
 
 
 def render_reader(url: str, data, err: str, hint: dict, translated: str = "") -> str:

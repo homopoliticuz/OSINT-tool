@@ -39,6 +39,25 @@ def free_port(preferred: int) -> int:
     raise SystemExit("Не найден свободный порт для ОКО")
 
 
+def lan_addresses() -> list:
+    """IP-адреса компьютера в локальной сети (без обращения к внешним серверам)."""
+    ips = []
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("10.255.255.255", 1))  # пакет не отправляется — только выбор интерфейса
+            ips.append(s.getsockname()[0])
+    except OSError:
+        pass
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            ip = info[4][0]
+            if ip not in ips and not ip.startswith("127."):
+                ips.append(ip)
+    except OSError:
+        pass
+    return [ip for ip in ips if not ip.startswith("127.")]
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="ОКО — мониторинг аналитических источников")
     ap.add_argument("--port", type=int, default=8765, help="порт (по умолчанию 8765)")
@@ -47,6 +66,8 @@ def main(argv=None):
     ap.add_argument("--fixtures", default=None, help=argparse.SUPPRESS)       # только для тестов
     ap.add_argument("--allow-private", action="store_true", help=argparse.SUPPRESS)
     ap.add_argument("--no-discovery", action="store_true", help="не проверять ленты источников при запуске")
+    ap.add_argument("--lan", action="store_true",
+                    help="доступ с телефона и других устройств домашней сети (вход по паролю из настроек)")
     ap.add_argument("--debug", action="store_true")
     args = ap.parse_args(argv)
 
@@ -61,14 +82,32 @@ def main(argv=None):
     port = free_port(args.port)
     app = App(ROOT, data_dir=args.data, fixtures=args.fixtures, allow_private=args.allow_private, port=port)
     Handler.app = app
-    httpd = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    host = "127.0.0.1"
+    lan_note = ""
+    if args.lan:
+        pw = app.state.settings().get("lan_password") or ""
+        if len(pw) < 8:
+            lan_note = ("  Доступ с телефона НЕ включён: задайте пароль (не короче 8 символов) в «Настройки → "
+                        "Телефон» и перезапустите ОКО с параметром --lan.")
+        else:
+            host = "0.0.0.0"
+            app.lan = True
+            app.lan_urls = ["http://%s:%d/" % (ip, port) for ip in lan_addresses()]
+    httpd = ThreadingHTTPServer((host, port), Handler)
     httpd.daemon_threads = True
     if not args.no_discovery and not args.fixtures:
         app.start_background()
+    elif not args.fixtures:
+        app.bot.start()
     url = "http://127.0.0.1:%d/" % port
     print("=" * 64)
     print("  ОКО %s — мониторинг аналитических источников" % VERSION)
     print("  Интерфейс:  %s" % url)
+    if app.lan:
+        print("  С телефона (та же Wi-Fi сеть): %s" % ("  ".join(app.lan_urls) or "адрес компьютера в сети, порт %d" % port))
+        print("  Вход по паролю из настроек. Не открывайте этот порт в интернет.")
+    elif lan_note:
+        print(lan_note)
     print("  Источников в реестре: %d" % len(app.registry.sources))
     print("  Остановить: закройте это окно или нажмите Ctrl+C")
     print("=" * 64, flush=True)

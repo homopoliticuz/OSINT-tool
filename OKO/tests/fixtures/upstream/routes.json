@@ -10,6 +10,10 @@
   "content_type": "application/json; charset=utf-8"
  },
  {
+  "pattern": "news\\.google\\.com/rss/search\\?q=[^&]*%22Human\\+Development\\+Report%22",
+  "file": "gn_reports.xml"
+ },
+ {
   "pattern": "news\\.google\\.com/rss/search\\?q=[^&]*site%3A.*hl=en-US",
   "file": "gn_en_sites.xml"
  },
