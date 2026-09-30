@@ -352,3 +352,9 @@ mark.hl { background: rgba(201, 162, 39, .28); color: inherit; border-radius: 2p
 .plog-tool { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 2px 0 8px; font-size: 12px; }
 details.health summary { cursor: pointer; }
 details.health[open] summary { margin-bottom: 8px; }
+.loosebar { margin: 10px 14px; padding: 10px 12px; border: 1px dashed var(--line3); border-radius: var(--r); color: var(--text2); font-size: 12.5px; background: var(--panel); }
+.tag.loose { color: var(--muted); border-style: dashed; }
+.check.strict { font-size: 12.5px; white-space: nowrap; }
+.foundby .rel-ok { color: var(--ok); }
+.foundby .rel-weak { color: var(--warn); }
+.foundby .fb-quote { color: var(--text2); font-style: italic; border-left: 2px solid rgba(201, 162, 39, .5); padding-left: 8px; unicode-bidi: plaintext; }

@@ -175,7 +175,8 @@
     mode: 'registry', minTier: 4, types: new Set(), providers: new Set(), preset: '7d', range: null,
     expansion: null, expKey: '', items: new Map(), meta: new Map(), jobId: null, running: false, abort: null,
     tasks: new Map(), stats: {}, notes: [], planInfo: [], started: 0, done: null,
-    filters: { tier: new Set(), origin: new Set(), kw: new Set(), type: new Set(), country: new Set(), lang: new Set(), src: new Set(), access: new Set(), hit: new Set(), flag: new Set() },
+    filters: { tier: new Set(), origin: new Set(), kw: new Set(), rel: new Set(), type: new Set(), country: new Set(), lang: new Set(), src: new Set(), access: new Set(), flag: new Set() },
+    strict: true, looseHidden: [],
     text: '', sort: 'authority', view: 'list', selected: null, shown: 150, openStories: new Set(),
     dossier: new Map(), history: [], settings: {}, snapshot: null, stopTerms: [],
     deep: { queue: [], active: 0, total: 0, done: 0 }, density: 'full', facetMore: new Set()
@@ -638,7 +639,12 @@
     for (const it of arr) { it.meta = S.meta.get(it.id) || null; C.classify(it, S.registry); }
     C.cluster(arr, S.stopTerms);
     const [a, b] = S.params ? [S.params.t_from, S.params.t_to] : [0, 0];
-    for (const it of arr) { C.classify(it, S.registry); it.score = C.score(it, a, b); it.starred = S.dossier.has(it.id); }
+    for (const it of arr) {
+      C.classify(it, S.registry);
+      it.rel = C.relevance(it, it.meta && it.meta.mentions ? it.meta.mentions : undefined);
+      it.score = C.score(it, a, b);
+      it.starred = S.dossier.has(it.id);
+    }
     applyFilters();
     render();
     if (S.selected && S.items.has(S.selected) && full !== 'skip-detail') renderDetail(S.items.get(S.selected), true);
@@ -661,7 +667,7 @@
     lang: (it) => (it.lang || '—').slice(0, 2),
     src: (it) => it.srcName || it.domain || '—',
     access: (it) => (it.paywall ? 'paid' : 'free'),
-    hit: (it) => it.hit || 'engine',
+    rel: (it) => it.rel || 'unverified',
     kw: kwKey
   };
   function flagsOf(it) {
@@ -675,7 +681,9 @@
   }
   function applyFilters() {
     const F = S.filters;
-    const base = [...S.items.values()].filter(baseOk);
+    const loose = [...S.items.values()].filter(baseOk);
+    const base = S.strict ? loose.filter((it) => C.REL_STRICT.has(it.rel)) : loose;
+    S.looseHidden = S.strict ? loose.filter((it) => !C.REL_STRICT.has(it.rel)) : [];
     facetCounts = {};
     for (const dim of Object.keys(DIM)) facetCounts[dim] = new Map();
     facetCounts.flag = new Map();
@@ -773,7 +781,7 @@
     box.appendChild(facetSection('Язык', 'lang', sortedEntries(facetCounts.lang), (k) => (k === '—' ? 'не определён' : langName(k)), 10));
     box.appendChild(facetSection('Издание', 'src', sortedEntries(facetCounts.src), (k) => k, 12));
     box.appendChild(facetSection('Доступ', 'access', sortedEntries(facetCounts.access, ['free', 'paid']), (k) => (k === 'paid' ? 'Платный / частично' : 'Свободный')));
-    box.appendChild(facetSection('Совпадение', 'hit', sortedEntries(facetCounts.hit, ['title', 'text', 'engine']), (k) => ({ title: 'в заголовке', text: 'в тексте/аннотации', engine: 'по данным поисковика' }[k])));
+    box.appendChild(facetSection('Соответствие теме', 'rel', sortedEntries(facetCounts.rel, ['title', 'rtitle', 'text', 'rtext', 'body', 'passing', 'unverified', 'absent']), (k) => C.REL_LABELS[k] || k));
     const fl = new Map(facetCounts.flag);
     fl.set('nostate', facetCounts.flag.get('state') || 0);
     box.appendChild(facetSection('Отметки', 'flag', [...fl.entries()].filter(([k]) => ['new', 'bm', 'ca', 'star', 'nostate'].includes(k)), (k) => ({
@@ -890,6 +898,24 @@
       row('Совпадение', el('span', null, 'термин не виден в заголовке и аннотации — поисковая система нашла его в тексте статьи'));
     }
     if (it.ctx_term) row('Контекст', el('b', null, it.ctx_term));
+    const rl = it.rel || C.relevance(it);
+    const relEl = el('span', { class: 'rel-' + (C.REL_STRICT.has(rl) ? 'ok' : 'weak') }, C.REL_LABELS[rl] || '');
+    const mm = it.meta && it.meta.mentions;
+    if (mm && mm.paras) relEl.appendChild(el('div', { class: 'fb-sub' }, 'на странице тема упоминается в ' + mm.hits + ' из ' + mm.paras + ' абзацев' + (mm.hits ? ' (впервые — в ' + (mm.first + 1) + '-м)' : '') +
+      (mm.ctx === false && (S.params && S.params.context || []).length ? ' · термин контекста на странице не найден' : '')));
+    else if (rl === 'unverified' && SERVER) {
+      const b = el('button', { class: 'btn small', style: 'margin-top:4px' }, it._checking ? 'проверяю…' : 'Проверить упоминания на странице');
+      b.addEventListener('click', (e) => { e.stopPropagation(); deepCheck(it, false); });
+      relEl.appendChild(el('div', null, b));
+    }
+    row('Соответствие', relEl);
+    if (mm && mm.samples && mm.samples.length) {
+      const terms = (mm.terms || []).concat(it.term ? [it.term] : []);
+      mm.samples.forEach((smp, i) => {
+        const t = terms.find((x) => locate(smp, x)) || '';
+        row(i ? '' : 'Цитата', marked(smp, t, { class: 'fb-quote', dir: 'auto', lang: it.lang || '' }, 'div'));
+      });
+    }
     const qs = it.q || [];
     qs.slice(0, 3).forEach((x, i) => row(i ? '' : (qs.length > 1 ? 'Запросы' : 'Запрос'), el('span', { class: 'fb-q' }, el('span', { class: 'muted' }, x.t + (x.q ? ': ' : ' — ')), x.q ? el('code', { dir: 'auto' }, x.q) : el('span', { class: 'muted' }, 'лента источника, отбор по терминам'))));
     if (qs.length > 3) row('', el('span', { class: 'muted' }, 'и ещё ' + (qs.length - 3)));
@@ -915,6 +941,7 @@
       it.country ? el('span', { class: 'cc', title: countryName(it.country) }, it.country) : null,
       it.lang ? el('span', { class: 'lg', title: langName(it.lang) }, it.lang.toUpperCase()) : null,
       el('time', { title: fmtDate(it.ts) + ' (' + tzLabel() + ') · ' + fmtUTC(it.ts) }, fmtShort(it.ts)), kwTag(it));
+    if (it.rel && !C.REL_STRICT.has(it.rel)) meta.appendChild(el('span', null, el('span', { class: 'tag loose', title: C.REL_LABELS[it.rel] }, it.rel === 'passing' ? 'вскользь' : it.rel === 'absent' ? 'не найдено на странице' : 'не проверено')));
     if (it.new) meta.appendChild(el('span', null, el('span', { class: 'tag new', title: 'Не встречалось в прошлых поисках по этой теме' }, 'НОВОЕ')));
     if (it.paywall) meta.appendChild(el('span', null, el('span', { class: 'tag pw', title: C.PAYWALL_LABELS[it.paywall] || '' }, 'платный')));
     if (it.state) meta.appendChild(el('span', null, el('span', { class: 'tag st' + (it.state === 'public' ? ' public' : ''), title: it.state === 'control' ? 'Государственное СМИ (под контролем государства)' : 'Государственное финансирование, редакционная независимость' }, it.state === 'control' ? 'гос.' : 'гос. фин.')));
@@ -943,6 +970,7 @@
     if (!visible.length) {
       list.appendChild(el('div', { class: 'empty' }, el('h2', null, 'Нет материалов под выбранные фильтры'),
         el('p', null, 'Ослабьте фильтры слева, переключитесь на «Широкий охват» или снизьте порог уровня.')));
+      if (S.looseHidden.length) list.appendChild(looseBar());
       return;
     }
     if (S.view === 'tiers') {
@@ -979,11 +1007,41 @@
     } else {
       visible.slice(0, S.shown).forEach((it) => list.appendChild(rowEl(it)));
     }
+    if (S.looseHidden.length) list.appendChild(looseBar());
     if (visible.length > S.shown && S.view !== 'stories') {
       const more = el('button', { class: 'btn more' }, 'Показать ещё ' + Math.min(150, visible.length - S.shown) + ' из ' + (visible.length - S.shown));
       more.addEventListener('click', () => { S.shown += 150; renderList(); });
       list.appendChild(more);
     }
+  }
+
+  function looseBar() {
+    const n = S.looseHidden.length;
+    const unver = S.looseHidden.filter((x) => x.rel === 'unverified' && !x._checking);
+    const bar = el('div', { class: 'loosebar' },
+      el('div', null, el('b', null, 'Скрыто ' + n + ' ' + plural(n, 'материал', 'материала', 'материалов')), ' — тема не видна в заголовке и аннотации: поисковик нашёл слово где-то в тексте (часто это упоминание вскользь или ссылка «читайте также»).'));
+    const acts = el('div', { class: 'ptool', style: 'margin:8px 0 0' });
+    const show = el('button', { class: 'btn small' }, 'Показать все');
+    show.addEventListener('click', () => setStrict(false));
+    acts.appendChild(show);
+    if (SERVER && unver.length) {
+      const chk = el('button', { class: 'btn small' }, 'Проверить страницы (' + Math.min(unver.length, 30) + ')');
+      chk.title = 'ОКО откроет страницы, посчитает упоминания темы и вернёт в ленту материалы, где тема раскрыта по существу';
+      chk.addEventListener('click', () => { queueChecks(unver.sort((a, b) => (b.score || 0) - (a.score || 0)).slice(0, 30)); toast('Проверяю страницы — подходящие материалы появятся в ленте'); });
+      acts.appendChild(chk);
+    }
+    const checked = S.looseHidden.filter((x) => x.rel === 'passing' || x.rel === 'absent').length;
+    if (checked) acts.appendChild(el('span', { class: 'muted', style: 'font-size:12px' }, 'проверено: ' + checked + ' — упоминание вскользь или не найдено'));
+    bar.appendChild(acts);
+    return bar;
+  }
+  function plural(n, one, few, many) { const m10 = n % 10, m100 = n % 100; return m10 === 1 && m100 !== 11 ? one : (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14) ? few : many); }
+  function setStrict(on) {
+    S.strict = on;
+    store.set('strict', on);
+    const cb = $('#optStrict'); if (cb) cb.checked = on;
+    S.shown = 150;
+    applyFilters(); render();
   }
 
   function emptyState() {
@@ -1163,7 +1221,8 @@
     it._checking = true;
     if (S.selected === it.id) renderDetail(it, true);
     try {
-      const m = await api('/api/article?url=' + encodeURIComponent(it.url));
+      const vt = verifyTerms();
+      const m = await api('/api/article', { method: 'POST', body: { url: it.url, terms: vt.terms, ctx: vt.ctx } });
       S.meta.set(it.id, m);
       if (m.ok) {
         if (m.final_url && it.gn) it.resolved = m.final_url;
@@ -1180,12 +1239,42 @@
     }
   }
 
+  let vtCache = { key: null, val: null };
+  function verifyTerms() {
+    const plan = (S.params && S.params.plan) || {};
+    const key = JSON.stringify(plan);
+    if (vtCache.key === key) return vtCache.val;
+    const terms = new Set(), ctx = new Set();
+    for (const p of Object.values(plan)) {
+      (p.q || []).concat(p.m || []).forEach((t) => terms.add(t));
+      (p.ctx || []).concat(p.ctx_m || []).forEach((t) => ctx.add(t));
+    }
+    vtCache = { key, val: { terms: [...terms].slice(0, 400), ctx: [...ctx].slice(0, 100) } };
+    return vtCache.val;
+  }
   function startAutoCheck() {
     const n = Number(S.settings.ui_autocheck == null ? 25 : S.settings.ui_autocheck);
-    if (!n) return;
-    const cands = visible.filter((x) => !S.meta.has(x.id) && x.origin && (x.origin.status === 'unknown' || x.origin.confidence === 'low') && (x.tier || 4) <= 3)
-      .sort((a, b) => (b.score || 0) - (a.score || 0)).slice(0, n);
-    S.deep = { queue: cands.slice(), active: 0, total: cands.length, done: 0 };
+    const nv = Number(S.settings.ui_verify == null ? 40 : S.settings.ui_verify);
+    const byScore = (a, b) => (b.score || 0) - (a.score || 0);
+    const cands = n ? visible.filter((x) => !S.meta.has(x.id) && x.origin && (x.origin.status === 'unknown' || x.origin.confidence === 'low') && (x.tier || 4) <= 3)
+      .sort(byScore).slice(0, n) : [];
+    // материалы, где тема видна только поисковику: проверяем страницы (ссылки Google News — не больше 15,
+    // чтобы не упереться в ограничения Google)
+    let gn = 0;
+    const unver = nv ? [...S.items.values()].filter((x) => x.rel === 'unverified' && !S.meta.has(x.id) && (x.tier || 4) <= 3 && baseOk(x))
+      .sort(byScore).filter((x) => !x.gn || gn++ < 15).slice(0, nv) : [];
+    const q = [];
+    for (let i = 0; i < Math.max(cands.length, unver.length); i++) {
+      if (unver[i]) q.push(unver[i]);
+      if (cands[i] && !q.includes(cands[i])) q.push(cands[i]);
+    }
+    S.deep = { queue: [], active: 0, total: 0, done: 0 };
+    queueChecks(q);
+  }
+  function queueChecks(list) {
+    const fresh = list.filter((x) => !x._checking && !S.deep.queue.includes(x));
+    S.deep.queue.push(...fresh);
+    S.deep.total += fresh.length;
     const next = () => {
       while (S.deep.active < 3 && S.deep.queue.length) {
         const it = S.deep.queue.shift();
@@ -1587,6 +1676,7 @@
     const card = el('div', { class: 'card kv' });
     const num = (k, def, min, max) => { const i = el('input', { class: 'input', type: 'number', min: String(min), max: String(max), style: 'width:120px' }); i.value = s[k] != null ? s[k] : def; i.dataset.k = k; return i; };
     const autoN = num('ui_autocheck', 25, 0, 80);
+    const verN = num('ui_verify', 40, 0, 100);
     const budget = num('gnews_budget', 120, 10, 300);
     const maxs = num('max_seconds', 300, 60, 900);
     const rw = el('input', { class: 'input', style: 'width:260px', placeholder: 'например: oko-analytics' }); rw.value = s.reliefweb_appname || '';
@@ -1596,6 +1686,8 @@
     card.append(
       el('label', null, 'Автопроверка первоисточников после поиска'), el('div', null, autoN, el('span', { class: 'muted' }, ' материалов (0 — выключить)')),
       el('div', { class: 'hint' }, 'ОКО откроет страницы самых значимых материалов с неясным статусом и проверит canonical, авторов и агентские пометки.'),
+      el('label', null, 'Проверка упоминаний темы на страницах'), el('div', null, verN, el('span', { class: 'muted' }, ' материалов после поиска (0 — выключить)')),
+      el('div', { class: 'hint' }, 'Для материалов, где тема видна только поисковику: ОКО откроет страницу и посчитает упоминания. Материалы с упоминанием по существу появятся в режиме «Строго по теме».'),
       el('label', null, 'Проверять страницу при открытии карточки'), openChk,
       el('label', null, 'Лимит запросов к Google News за поиск'), budget,
       el('div', { class: 'hint' }, 'Больше — полнее охват длинных периодов, но выше риск временной блокировки Google.'),
@@ -1607,7 +1699,7 @@
     const save = el('button', { class: 'btn primary' }, 'СОХРАНИТЬ');
     save.addEventListener('click', async () => {
       S.density = dens.value; store.set('density', S.density);
-      const patch = { ui_autocheck: Number(autoN.value), gnews_budget: Number(budget.value), max_seconds: Number(maxs.value), reliefweb_appname: rw.value.trim(), auto_discovery: disc.checked, ui_autocheck_open: openChk.checked };
+      const patch = { ui_autocheck: Number(autoN.value), ui_verify: Number(verN.value), gnews_budget: Number(budget.value), max_seconds: Number(maxs.value), reliefweb_appname: rw.value.trim(), auto_discovery: disc.checked, ui_autocheck_open: openChk.checked };
       if (SERVER) { try { S.settings = await api('/api/settings', { method: 'POST', body: patch }); toast('Настройки сохранены'); } catch (e) { toast(e.message, true); } }
       else { Object.assign(S.settings, patch); store.set('settings', S.settings); toast('Сохранено в браузере'); }
       render();
@@ -1664,7 +1756,7 @@
       'Издание': it.srcName || '', 'Сайт': it.domain || '', 'Страна': it.country || '', 'Язык': it.lang || '',
       'Тип': C.TYPE_LABELS[it.type] || '', 'Доступ': it.paywall ? C.PAYWALL_LABELS[it.paywall] : 'свободный',
       'Гос.': it.state === 'control' ? 'гос. СМИ' : (it.state === 'public' ? 'гос. финанс.' : ''), 'Авторы': (it.authors || []).join(', '),
-      'Ссылка': it.resolved || it.url, 'Найдено по': foundByText(it), 'Найдено через': (it.via || []).join('; '), 'Заметка': it.note || ''
+      'Ссылка': it.resolved || it.url, 'Найдено по': foundByText(it), 'Соответствие': C.REL_LABELS[it.rel] || '', 'Найдено через': (it.via || []).join('; '), 'Заметка': it.note || ''
     }));
   }
   function toCSV(items) {
@@ -1809,6 +1901,7 @@
     S.sort = store.get('sort', 'authority');
     S.view = store.get('view', 'list');
     S.density = store.get('density', 'full');
+    S.strict = store.get('strict', true);
     S.history = store.get('history', []);
     S.settings = store.get('settings', {});
     for (const d of store.get('dossier', [])) if (d && d.item) S.dossier.set(d.item.id, d);
@@ -1874,6 +1967,8 @@
       $$('#viewSeg button').forEach((x) => x.classList.toggle('on', x === b));
       renderList();
     }));
+    $('#optStrict').checked = S.strict;
+    $('#optStrict').addEventListener('change', () => setStrict($('#optStrict').checked));
     $('#rFilter').addEventListener('input', debounce(() => { S.text = $('#rFilter').value.trim(); S.shown = 150; applyFilters(); render(); }, 250));
     $('#btnFacets').addEventListener('click', () => $('#facets').classList.toggle('closed'));
     $$('#topnav button').forEach((b) => b.addEventListener('click', () => showView(b.dataset.view)));

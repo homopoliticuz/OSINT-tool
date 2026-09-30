@@ -20,7 +20,7 @@ import traceback
 from http.server import BaseHTTPRequestHandler
 from urllib.parse import parse_qs, quote, unquote, urlsplit
 
-from . import VERSION, htmlmeta, pdfprint, webdata
+from . import VERSION, htmlmeta, pdfprint, relevance, webdata
 from .health import Health
 from .lexicon import Languages, Lexicon, build_plan, plan_origins
 from .net import FetchError, HttpClient
@@ -285,6 +285,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"ok": bool(job)})
         if route == "article" and method == "GET":
             return self._json(self._article((qs.get("url") or [""])[0]))
+        if route == "article" and method == "POST":
+            data = self._body()
+            terms = [str(t)[:120] for t in (data.get("terms") or []) if str(t).strip()][:400]
+            ctx_terms = [str(t)[:120] for t in (data.get("ctx") or []) if str(t).strip()][:100]
+            return self._json(self._article(str(data.get("url") or ""), terms, ctx_terms))
         if route == "resolve" and method == "GET":
             url = (qs.get("url") or [""])[0]
             return self._json({"url": gnews.resolve(app.http, url) if gnews.is_gnews(url) else url})
@@ -370,7 +375,7 @@ class Handler(BaseHTTPRequestHandler):
             job.cancel.set()
 
     # ------------------------------------------------------------ глубокая проверка статьи
-    def _article(self, url: str) -> dict:
+    def _article(self, url: str, terms=None, ctx_terms=None) -> dict:
         app = self.app
         if not is_http_url(url):
             raise ValueError("некорректная ссылка")
@@ -389,7 +394,14 @@ class Handler(BaseHTTPRequestHandler):
         if "pdf" in ctype:
             return {"ok": True, "url": real, "final_url": resp.url, "resolved": resolved, "kind": "pdf",
                     "authors": [], "canonical": "", "credits": []}
-        meta = htmlmeta.extract_meta(resp.text(), resp.url)
+        if terms:
+            rd = htmlmeta.extract_readable(resp.text(), resp.url)
+            meta = rd["meta"]
+            meta["mentions"] = relevance.mention_stats(rd["blocks"], meta.get("title", ""),
+                                                       meta.get("description") or meta.get("lead") or "",
+                                                       terms, ctx_terms)
+        else:
+            meta = htmlmeta.extract_meta(resp.text(), resp.url)
         meta.update(ok=True, url=real, final_url=resp.url, resolved=resolved)
         s = app.registry.lookup(meta["canonical"] or resp.url)
         meta["canonical_source"] = s["id"] if s else ""

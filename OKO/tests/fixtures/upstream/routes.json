@@ -136,6 +136,11 @@
   "file": "generic.xml"
  },
  {
+  "pattern": "^https://carnegieendowment\\.org/research/",
+  "file": "page_carnegie.html",
+  "content_type": "text/html; charset=utf-8"
+ },
+ {
   "pattern": "^https://www\\.reuters\\.com/world/",
   "file": "page_reuters.html",
   "content_type": "text/html; charset=utf-8"

@@ -15,7 +15,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 FIX = os.path.join(ROOT, "tests", "fixtures", "upstream")
 
-from okolib import feedparse, htmlmeta  # noqa: E402
+from okolib import feedparse, htmlmeta, relevance  # noqa: E402
 from okolib.health import Health, classify  # noqa: E402
 from okolib.lexicon import Languages, Lexicon, build_plan, plan_origins  # noqa: E402
 from okolib.search import sanitize_origins  # noqa: E402
@@ -494,6 +494,23 @@ class TestServerIntegration(unittest.TestCase):
         self.assertTrue(done.get("report"))
         rep = json.load(self.call("/api/reports/" + urllib.request.quote(done["report"])))
         self.assertEqual(len(rep["items"]), len(items))
+
+    def test_article_mentions(self):
+        # поисковик нашёл статью, где тема не видна в заголовке: проверяем упоминания на странице
+        m = json.load(self.call("/api/article", {
+            "url": "https://carnegieendowment.org/research/2026/09/central-asia-washington",
+            "terms": ["Uzbekistan", "Tashkent", "uzbek"], "ctx": ["minerals"]}))
+        self.assertTrue(m["ok"])
+        mm = m["mentions"]
+        self.assertEqual(mm["hits"], 2)
+        self.assertEqual(mm["first"], 1)
+        self.assertTrue(mm["ctx"])
+        self.assertIn("Uzbekistan", mm["samples"][0])
+        self.assertEqual(relevance.level({"hit": "engine"}, mm), "body")
+        self.assertEqual(relevance.level({"hit": "engine"}, dict(mm, hits=1, first=3)), "passing")
+        self.assertEqual(relevance.level({"hit": "engine"}, dict(mm, hits=0, first=None)), "absent")
+        self.assertEqual(relevance.level({"hit": "engine"}), "unverified")
+        self.assertEqual(relevance.level({"hit": "title", "role": "related"}), "rtitle")
 
     def test_article_deep_check(self):
         url = urllib.request.quote("https://www.yahoo.com/news/uzbekistan-us-sign-critical-minerals-1.html", safe="")

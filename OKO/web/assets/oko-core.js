@@ -618,9 +618,29 @@
   const HIT_W = { title: 20, text: 10, engine: 5 };
   const ORIGIN_RANK = { primary: 0, unknown: 1, reprint: 2 };
 
+  // ------------------------------------------------------------ соответствие теме (как okolib/relevance.py)
+  const REL_STRICT = new Set(['title', 'rtitle', 'text', 'rtext', 'body']);
+  const REL_LABELS = {
+    title: 'ключевое слово в заголовке', rtitle: 'связанный термин в заголовке', text: 'ключевое слово в аннотации',
+    rtext: 'связанный термин в аннотации', body: 'тема в тексте статьи (проверено)', passing: 'упоминание вскользь (проверено)',
+    absent: 'на странице не найдено (проверено)', unverified: 'только по данным поисковика (не проверено)'
+  };
+  const REL_W = { title: 20, rtitle: 14, text: 10, rtext: 7, body: 9, passing: 1, absent: -20, unverified: 3 };
+  function relevance(item, mentions) {
+    const hit = item.hit || 'engine';
+    const related = item.role === 'related';
+    if (hit === 'title') return related ? 'rtitle' : 'title';
+    if (hit === 'text') return related ? 'rtext' : 'text';
+    const m = mentions !== undefined ? mentions : item.mentions;
+    if (!m || m.paras === undefined || m.paras === null) return 'unverified';
+    if (m.in_title || (m.hits || 0) >= 2 || m.in_lead || (m.hits && m.first !== null && m.first !== undefined && m.first <= 1)) return 'body';
+    if ((m.hits || 0) === 1) return 'passing';
+    return 'absent';
+  }
+
   function score(item, tFrom, tTo) {
     let s = { 1: 40, 2: 28, 3: 16, 4: 6 }[item.tier] || 6;
-    s += HIT_W[item.hit] || 5;
+    s += item.rel ? (REL_W[item.rel] || 0) : (HIT_W[item.hit] || 5);
     if (item.ca) s += 6;
     if (ANALYTIC.has(item.type)) s += 10;
     if (item.origin) s += item.origin.status === 'primary' ? 8 : (item.origin.status === 'reprint' ? -8 : 0);
@@ -634,9 +654,10 @@
     const byDate = (a, b) => (b.ts || 0) - (a.ts || 0);
     if (mode === 'date') return items.sort(byDate);
     if (mode === 'relevance') return items.sort((a, b) => (b.score || 0) - (a.score || 0) || byDate(a, b));
+    const relRank = (x) => (x.rel ? (REL_STRICT.has(x.rel) ? (x.rel === 'title' ? 0 : 1) : 2) : (hitRank[x.hit] || 2));
     return items.sort((a, b) => (a.tier || 4) - (b.tier || 4) ||
       (ORIGIN_RANK[a.origin && a.origin.status] || 1) - (ORIGIN_RANK[b.origin && b.origin.status] || 1) ||
-      (hitRank[a.hit] || 2) - (hitRank[b.hit] || 2) || byDate(a, b));
+      relRank(a) - relRank(b) || byDate(a, b));
   }
 
   function citation(item, now) {
@@ -653,6 +674,7 @@
 
   return {
     normText, TermMatcher, Registry, classify, cluster, score, sortItems, detectCredits, citation, hostOf, sameSite,
-    tldCountry, isAggregator, inferSource, TIERS, TYPE_LABELS, PAYWALL_LABELS, ANALYTIC, OUTLETS, titleCore, tokens
+    tldCountry, isAggregator, inferSource, TIERS, TYPE_LABELS, PAYWALL_LABELS, ANALYTIC, OUTLETS, titleCore, tokens,
+    relevance, REL_STRICT, REL_LABELS
   };
 });
