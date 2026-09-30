@@ -9,8 +9,9 @@ import time
 
 from .util import now_ts, read_json, safe_filename, write_json
 
+SETTINGS_VERSION = 2
 DEFAULT_SETTINGS = {
-    "gnews_budget": 80,
+    "gnews_budget": 120,
     "max_seconds": 300,
     "reliefweb_appname": "",
     "auto_discovery": True,
@@ -36,7 +37,11 @@ class State:
         with self._lock:
             if self._settings is None:
                 s = dict(DEFAULT_SETTINGS)
-                s.update(read_json(self._p("settings"), {}) or {})
+                saved = read_json(self._p("settings"), {}) or {}
+                if saved and saved.get("v", 1) < 2 and saved.get("gnews_budget") == 80:
+                    saved["gnews_budget"] = 120  # прежнее значение по умолчанию: реестр вырос до 800+ источников
+                s.update(saved)
+                s["v"] = SETTINGS_VERSION
                 self._settings = s
             return dict(self._settings)
 
@@ -46,7 +51,7 @@ class State:
             for k, v in (patch or {}).items():
                 if k in DEFAULT_SETTINGS or k.startswith("ui_"):
                     s[k] = v
-            s["gnews_budget"] = max(10, min(300, int(s.get("gnews_budget") or 80)))
+            s["gnews_budget"] = max(10, min(300, int(s.get("gnews_budget") or 120)))
             s["max_seconds"] = max(60, min(900, int(s.get("max_seconds") or 300)))
             write_json(self._p("settings"), s)
             self._settings = s

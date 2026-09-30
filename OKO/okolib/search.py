@@ -10,6 +10,7 @@ import traceback
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 
+from .health import classify, describe
 from .lexicon import ROLE_LABELS
 from .net import FetchError
 from .providers import extra, feeds, gdelt, gnews
@@ -30,6 +31,8 @@ PROVIDERS = [
     ("reliefweb", "ReliefWeb (доклады ООН и НКО)", extra.reliefweb_tasks, 1, False),
 ]
 PROVIDER_IDS = [p[0] for p in PROVIDERS]
+ENGINE_PROVIDERS = {"gnews", "gdelt", "bing", "openalex", "worldbank", "govuk", "reliefweb"}
+HOST_NAMES = {"news.google.com": "Google News", "api.gdeltproject.org": "GDELT", "www.bing.com": "Bing"}
 HIT_RANK = {"title": 3, "text": 2, "engine": 1}
 MAX_TERMS = 12
 
@@ -114,7 +117,7 @@ class SearchCtx:
         self.not_matcher = TermMatcher(nott) if nott else None
         self.origins = sanitize_origins(params.get("origins"), self.plan, params.get("topics"),
                                         params.get("context"))
-        self.budget = {"gnews": int(self.settings.get("gnews_budget", 80))}
+        self.budget = {"gnews": int(self.settings.get("gnews_budget", 120))}
         self._lock = threading.Lock()
         self._tl = threading.local()
 
@@ -186,7 +189,7 @@ class SearchJob:
         self.notes: list[str] = []
         self.tasks_state: dict[str, dict] = {}
         self.stats = {"found": 0, "unique": 0, "no_date": 0, "out_of_range": 0, "excluded": 0,
-                      "tasks": 0, "tasks_done": 0, "tasks_failed": 0}
+                      "tasks": 0, "tasks_done": 0, "tasks_failed": 0, "tasks_skipped": 0}
         self.started = time.time()
         self.finished = None
         self.done = threading.Event()
@@ -381,12 +384,29 @@ class SearchJob:
         ft = threading.Thread(target=flusher, daemon=True)
         ft.start()
 
+        health = self.app.health
+
+        def skip(st, why, kind=""):
+            st.update(status="skip", err=why, kind=kind)
+            with self._lock:
+                self.stats["tasks_done"] += 1
+                self.stats["tasks_skipped"] = self.stats.get("tasks_skipped", 0) + 1
+                if kind == "limit":
+                    lim = self.stats.setdefault("limited", {})
+                    lim[st["provider"]] = lim.get(st["provider"], 0) + 1
+            self.emit("task", dict(st))
+
         def run_task(t):
             st = self.tasks_state[t.key]
             if self.cancel.is_set():
-                st.update(status="skip", err="остановлено")
-                self.emit("task", dict(st))
-                return
+                return skip(st, "остановлено")
+            off = health.skip_reason(t.key)
+            if off:
+                return skip(st, off, "off")
+            host = t.meta.get("host")
+            if host and self.app.http.host_blocked(host) > 0:
+                return skip(st, "%s временно ограничил запросы — пропущено (пауза ещё %d мин)" % (
+                    HOST_NAMES.get(host, host), max(1, int(self.app.http.host_blocked(host) // 60) + 1)), "limit")
             st["status"] = "run"
             self.emit("task", dict(st))
             t0 = time.time()
@@ -394,13 +414,26 @@ class SearchJob:
             try:
                 n = t.fn(ctx, t) or 0
                 st.update(status="ok", n=n)
+                health.ok(t.key)
                 if t.meta.get("skipped"):
                     st.update(status="skip", err=t.meta["skipped"])
             except FetchError as e:
-                st.update(status="error", err=str(e)[:200])
+                kind = classify(e)
+                reason, hint = describe(kind)
+                if kind == "limit" and host:
+                    # пауза сервиса целиком, а не сбой канала — пропуск, а не ошибка
+                    st["ms"] = int((time.time() - t0) * 1000)
+                    return skip(st, "%s: %s — пропущено" % (HOST_NAMES.get(host, host), reason), "limit")
+                h = health.fail(t.key, kind, str(e), label=t.label, provider=t.provider, url=e.url or "",
+                                source_id=t.meta.get("source", ""), engine=t.provider in ENGINE_PROVIDERS)
+                st.update(status="error", err="%s — %s" % (str(e)[:160], reason), kind=kind, hint=hint,
+                          url=(e.url or "")[:300], streak=h.get("streak", 1))
+                if h.get("until"):
+                    st["hint"] = hint + "; канал отключён до " + time.strftime("%d.%m %H:%M", time.localtime(h["until"]))
             except Exception as e:  # noqa: BLE001
                 log.error("task %s failed: %s", t.key, traceback.format_exc())
-                st.update(status="error", err="внутренняя ошибка: %s" % str(e)[:160])
+                reason, hint = describe("other")
+                st.update(status="error", err="внутренняя ошибка: %s" % str(e)[:160], kind="other", hint=hint)
             finally:
                 ctx.set_task(None)
             st["ms"] = int((time.time() - t0) * 1000)
@@ -428,10 +461,15 @@ class SearchJob:
             self._flush_items()
             try:
                 self.app.registry.flush()
+                self.app.health.flush()
             except OSError:
                 pass
 
     def _finish(self):
+        for pid, n in (self.stats.get("limited") or {}).items():
+            label = {"gnews": "Google News", "gdelt": "GDELT", "bing": "Bing News"}.get(pid, pid)
+            self.notes.append("%s временно ограничил частоту запросов: пропущено %d запросов. Уже найденное "
+                              "сохранено — повторите поиск через 10–15 минут для полного охвата." % (label, n))
         took = (self.finished or time.time()) - self.started
         summary = dict(self.stats)
         summary.update(took=round(took, 1), notes=self.notes, cancelled=self.cancel.is_set() and not

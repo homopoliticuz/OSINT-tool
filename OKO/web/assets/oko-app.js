@@ -1220,6 +1220,7 @@
     box.classList.remove('hidden');
     const done = tasks.filter((t) => ['ok', 'error', 'skip'].includes(t.status)).length;
     const err = tasks.filter((t) => t.status === 'error').length;
+    const skipped = tasks.filter((t) => t.status === 'skip' && (t.kind === 'limit' || t.kind === 'off')).length;
     const pct = tasks.length ? Math.round((done / tasks.length) * 100) : (S.running ? 3 : 100);
     $('#pbarFill').style.width = (S.running ? pct : 100) + '%';
     const line = clear($('#pline'));
@@ -1231,6 +1232,7 @@
         el('span', null, 'Материалов: ', el('b', null, String(S.items.size))),
         el('span', null, 'Первоисточников: ', el('b', null, String(prim))),
         el('span', null, 'Ошибок: ', el('b', { style: err ? 'color:var(--bad)' : '' }, String(err))));
+      if (skipped) line.appendChild(el('span', { class: 'muted', title: 'Пропущены: сервис временно ограничил частоту запросов или канал отключён после повторных ошибок (подробности — в «Журнале»)' }, 'пропущено: ' + skipped));
       const secs = S.done && S.done.took ? S.done.took : (S.started ? (Date.now() - S.started) / 1000 : 0);
       line.appendChild(el('span', null, 'Время: ', el('b', null, Math.round(secs) + ' с')));
       if (S.done && S.done.out_of_range) line.appendChild(el('span', { class: 'muted', title: 'Отброшены материалы вне заданного периода' }, 'вне периода: ' + S.done.out_of_range));
@@ -1244,18 +1246,33 @@
     const notes = clear($('#pnotes'));
     for (const n of S.notes || []) notes.appendChild(el('div', null, '⚠ ' + n));
   }
+  function errorReport(tasks) {
+    const provLabel = Object.fromEntries(((S.boot && S.boot.providers) || []).map((p) => [p.id, p.label]));
+    const bad = tasks.filter((t) => t.status === 'error' || (t.status === 'skip' && (t.kind === 'limit' || t.kind === 'off')));
+    const q = S.params ? (S.params.topics || []).join(', ') + ' · ' + fmtDate(S.params.t_from) + ' — ' + fmtDate(S.params.t_to) : '';
+    return ['ОКО — отчёт об ошибках каналов (' + fmtDate(Date.now() / 1000) + ')', q ? 'Поиск: ' + q : '', '']
+      .concat(bad.map((t) => (t.status === 'error' ? '✗ ' : '– ') + (provLabel[t.provider] || t.provider) + ' · ' + t.label + ' [' + t.key + ']\n    ' + (t.err || '') +
+        (t.hint ? '\n    что делать: ' + t.hint : '') + (t.url ? '\n    адрес: ' + t.url : ''))).join('\n');
+  }
   function renderLog(tasks) {
     const box = clear($('#plog'));
     const provLabel = Object.fromEntries(((S.boot && S.boot.providers) || []).map((p) => [p.id, p.label]));
     const order = { error: 0, run: 1, wait: 2, skip: 3, ok: 4 };
+    if (tasks.some((t) => t.status === 'error' || t.kind === 'limit' || t.kind === 'off')) {
+      box.appendChild(el('div', { class: 'plog-tool' }, actBtn('copy', 'Скопировать отчёт об ошибках', () => copyText(errorReport(tasks)), 'Список ошибок с причинами и адресами — чтобы переслать разработчику'),
+        el('span', { class: 'muted' }, 'Каналы, которые падают несколько поисков подряд, ОКО временно отключает само (список — в «Источники → Каналы с ошибками»).')));
+    }
     const t = el('table');
     tasks.slice().sort((a, b) => (order[a.status] - order[b.status]) || a.label.localeCompare(b.label)).forEach((x) => {
+      const info = el('td', { class: x.status === 'error' ? 'st-error' : 'muted', style: 'font-size:11.5px' }, x.err || x.note || '');
+      if (x.hint) info.appendChild(el('div', { class: 'muted' }, 'что делать: ' + x.hint));
+      if (x.url && x.status === 'error') info.appendChild(el('div', null, extLink(x.url, x.url.length > 90 ? x.url.slice(0, 90) + '…' : x.url, 'mono')));
       t.appendChild(el('tr', null,
         el('td', { class: 'st-' + x.status, style: 'width:22px' }, { ok: '✓', error: '✗', run: '…', wait: '·', skip: '–' }[x.status] || ''),
         el('td', { class: 'muted', style: 'white-space:nowrap' }, provLabel[x.provider] || x.provider),
         el('td', null, x.label), el('td', { class: 'mono', style: 'white-space:nowrap;text-align:right' }, x.n != null ? String(x.n) : ''),
         el('td', { class: 'mono muted', style: 'white-space:nowrap' }, x.ms != null ? (x.ms / 1000).toFixed(1) + ' с' : ''),
-        el('td', { class: x.err ? 'st-error' : 'muted', style: 'font-size:11.5px' }, x.err || x.note || '')));
+        info));
     });
     box.appendChild(t);
   }
@@ -1362,6 +1379,7 @@
         if (s.progress && s.progress.running) p.appendChild(el('div', { class: 'card' }, 'Идёт проверка каналов источников: ' + s.progress.done + ' из ' + s.progress.total));
       } catch (e) { toast('Источники: ' + e.message, true); }
     }
+    if (SERVER) p.appendChild(await healthBlock());
     const tool = el('div', { class: 'ptool' });
     const q = el('input', { class: 'input', placeholder: 'Поиск по названию или сайту…', style: 'width:240px' });
     q.value = srcFilter.q;
@@ -1417,6 +1435,34 @@
       wrap.appendChild(t);
     }
     drawTable();
+  }
+  async function healthBlock() {
+    let ch = [];
+    try { ch = (await api('/api/sources/health')).channels || []; } catch (e) { return el('div'); }
+    const off = ch.filter((c) => c.disabled).length;
+    const det = el('details', { class: 'card health' });
+    det.appendChild(el('summary', null, el('b', null, 'Каналы с ошибками: ' + ch.length), off ? ' · временно отключено: ' + off : '', ch.length ? '' : ' — всё работает'));
+    if (!ch.length) return det;
+    const t = el('table', { class: 'tbl' });
+    t.appendChild(el('tr', null, el('th', null, 'Канал'), el('th', null, 'Причина и что делать'), el('th', null, 'Подряд'), el('th', null, 'Последняя'), el('th', null, 'Состояние'), el('th', null, '')));
+    for (const c of ch) {
+      const again = el('button', { class: 'btn small' }, 'Проверить снова');
+      again.addEventListener('click', async () => { await api('/api/sources/health', { method: 'POST', body: { key: c.key } }); toast('Канал будет опрошен при следующем поиске'); renderSources(); });
+      t.appendChild(el('tr', null,
+        el('td', null, el('div', null, c.label || c.key), el('div', { class: 'muted mono', style: 'font-size:11px' }, c.key)),
+        el('td', null, el('div', null, c.reason), el('div', { class: 'muted', style: 'font-size:11.5px' }, c.err), el('div', { class: 'muted', style: 'font-size:11.5px' }, 'что делать: ' + c.hint),
+          c.url ? el('div', { style: 'font-size:11px' }, extLink(c.url, c.url.length > 80 ? c.url.slice(0, 80) + '…' : c.url, 'mono')) : null),
+        el('td', { class: 'num' }, String(c.streak || 0)), el('td', { class: 'num' }, c.last ? fmtDate(c.last) : ''),
+        el('td', null, c.disabled ? el('span', { style: 'color:var(--warn)' }, 'отключён до ' + fmtDate(c.until)) : el('span', { class: 'muted' }, 'опрашивается')),
+        el('td', null, again)));
+    }
+    const all = el('button', { class: 'btn small' }, 'Сбросить все и проверить снова');
+    all.addEventListener('click', async () => { await api('/api/sources/health', { method: 'POST', body: {} }); toast('Все каналы будут опрошены при следующем поиске'); renderSources(); });
+    const copy = el('button', { class: 'btn small' }, 'Скопировать список');
+    copy.addEventListener('click', () => copyText(ch.map((c) => (c.disabled ? '[отключён] ' : '') + (c.label || c.key) + ' [' + c.key + '] — ' + c.reason + ': ' + c.err + (c.url ? ' — ' + c.url : '')).join('\n')));
+    det.append(el('p', { class: 'muted', style: 'font-size:12.5px' }, 'Канал отключается автоматически после 3 ошибок подряд (на 12 ч, затем 24–72 ч) и проверяется снова. Ленты с исчезнувшим адресом ОКО ищет заново само. Ограничения частоты запросов у Google/GDELT/Bing каналы не отключают.'),
+      el('div', { class: 'ptool' }, all, copy), t);
+    return det;
   }
   async function saveOverride(s, patch) {
     if (!SERVER) { toast('Изменения реестра сохраняются при работе через сервер', true); return; }
@@ -1541,7 +1587,7 @@
     const card = el('div', { class: 'card kv' });
     const num = (k, def, min, max) => { const i = el('input', { class: 'input', type: 'number', min: String(min), max: String(max), style: 'width:120px' }); i.value = s[k] != null ? s[k] : def; i.dataset.k = k; return i; };
     const autoN = num('ui_autocheck', 25, 0, 80);
-    const budget = num('gnews_budget', 80, 10, 300);
+    const budget = num('gnews_budget', 120, 10, 300);
     const maxs = num('max_seconds', 300, 60, 900);
     const rw = el('input', { class: 'input', style: 'width:260px', placeholder: 'например: oko-analytics' }); rw.value = s.reliefweb_appname || '';
     const disc = el('input', { type: 'checkbox' }); disc.checked = s.auto_discovery !== false;

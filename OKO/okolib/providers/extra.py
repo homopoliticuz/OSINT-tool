@@ -29,7 +29,7 @@ def bing_tasks(ctx) -> list:
             continue
         out.append(Task("bing", "bing:" + code, "Bing News · %s" % mk[1],
                         partial(_run_bing, code=code, mk=mk, interval=interval), group=code,
-                        meta=query_meta(p["q"][:3], p.get("ctx", [])[:2])))
+                        meta=dict(query_meta(p["q"][:3], p.get("ctx", [])[:2]), host="www.bing.com")))
     return out
 
 
@@ -44,7 +44,8 @@ def _run_bing(ctx, task, code, mk, interval) -> int:
     r = ctx.http.get(url, ttl=20 * 60, timeout=15, retries=1, lang=mk[0], cancel=ctx.cancel)
     feed = parse_feed(r.body, url, r.charset())
     if feed["kind"] == "html":
-        raise FetchError("Bing вернул страницу вместо ленты")
+        ctx.http.block_host("www.bing.com", 900)
+        raise FetchError("Bing показал страницу проверки вместо ленты — Bing News приостановлен на 15 мин", 429, url)
     added = 0
     for it in feed["items"]:
         link = it["link"]
@@ -177,7 +178,8 @@ def _run_govuk(ctx, task) -> int:
         hit = ctx.match_item(it["title"], it.get("summary", ""))
         item = make_item(url=it["link"], title=it["title"], ts=ts, lang="en", prov="govuk", via="GOV.UK",
                          src_name="GOV.UK", src_url="https://www.gov.uk", snippet=it.get("summary", ""),
-                         source_id="gov_uk", kind="official", hit=hit[0] if hit else "text")
+                         source_id="gov_uk", kind="official", hit=hit[0] if hit else "engine",
+                         term=hit[1] if hit else "")
         if ctx.add(item):
             added += 1
     return added

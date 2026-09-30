@@ -57,14 +57,16 @@ def tasks(ctx) -> list:
                 continue
             label = "Google News · %s (%s)" % (gl, hl)
             meta = query_meta(p["q"][:4], p["ctx"][:3], p["not"][:4])
-            meta["exp"] = bool(lang.get("gnews_exp"))
+            meta["host"] = "news.google.com"
             out.append(Task("gnews", "gn:%s:%s" % (gl, hl), label,
                             partial(_run, ed=ed, code=code, terms=p["q"][:4], ctx_terms=p["ctx"][:3],
                                     not_terms=p["not"][:4], sites=None),
                             group=code, meta=meta))
-    # адресный поиск по аналитическим источникам реестра
+    # адресный поиск по аналитическим источникам реестра: сначала уровень A, профильные по Центральной
+    # Азии и источники из закладок — чтобы при исчерпании лимита запросов важное было уже опрошено
     groups = {}
-    for s in ctx.registry.sources:
+    ranked = sorted(ctx.registry.sources, key=lambda s: (s.get("tier", 3), not s.get("ca"), not s.get("bm")))
+    for s in ranked:
         if s.get("off") or not ctx.source_allowed(s):
             continue
         if s.get("type") not in ANALYTIC_TYPES and not s.get("ca"):
@@ -76,6 +78,7 @@ def tasks(ctx) -> list:
                 continue
             for d in s["domains"][:1]:
                 groups.setdefault(l, []).append(d)
+    site_tasks = []
     for code, domains in groups.items():
         lang = ctx.languages.by_code[code]
         ed = lang["gnews"][0]
@@ -87,12 +90,16 @@ def tasks(ctx) -> list:
             meta = query_meta(p["q"][:2], p["ctx"][:2], p["not"][:3],
                               "site:(%s)" % ", ".join(chunk[:4]) + (" и ещё %d" % (len(chunk) - 4) if len(chunk) > 4 else ""))
             meta["sites"] = len(chunk)
-            out.append(Task("gnews", "gns:%s:%d" % (code, i // SITE_GROUP),
-                            "Google News · аналитика %s #%d" % (code.upper(), i // SITE_GROUP + 1),
-                            partial(_run, ed=ed, code=code, terms=p["q"][:2], ctx_terms=p["ctx"][:2],
-                                    not_terms=p["not"][:3], sites=chunk),
-                            group=code, meta=meta))
-    return out
+            meta["host"] = "news.google.com"
+            site_tasks.append((i // SITE_GROUP, Task(
+                "gnews", "gns:%s:%d" % (code, i // SITE_GROUP),
+                "Google News · аналитика %s #%d" % (code.upper(), i // SITE_GROUP + 1),
+                partial(_run, ed=ed, code=code, terms=p["q"][:2], ctx_terms=p["ctx"][:2],
+                        not_terms=p["not"][:3], sites=chunk),
+                group=code, meta=meta)))
+    # чередуем языки: первые (самые авторитетные) группы каждого языка — раньше остальных
+    site_tasks.sort(key=lambda x: x[0])
+    return out + [t for _, t in site_tasks]
 
 
 def _run(ctx, task, *, ed, code, terms, ctx_terms, not_terms, sites, t_from=None, t_to=None, depth=0) -> int:
@@ -107,7 +114,10 @@ def _run(ctx, task, *, ed, code, terms, ctx_terms, not_terms, sites, t_from=None
     r = ctx.http.get(url, ttl=_cache_ttl(t_to), timeout=15, lang=hl, cancel=ctx.cancel)
     feed = parse_feed(r.body, url, r.charset())
     if feed["kind"] == "html":
-        raise FetchError("Google вернул страницу вместо ленты (возможна проверка «я не робот»)")
+        # проверка «я не робот» или согласие на cookies — это пауза сервиса целиком
+        ctx.http.block_host("news.google.com", 600)
+        raise FetchError("Google показал проверку «я не робот» — запросы к Google News приостановлены на 10 мин",
+                         429, url)
     added = 0
     for it in feed["items"]:
         item = convert(it, code, "%s:%s" % (gl, hl))

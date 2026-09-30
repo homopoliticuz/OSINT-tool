@@ -78,7 +78,7 @@ def _meta(ctx, code) -> dict:
     terms = list(en.get("q", [])[:4])
     if code and code != "en":
         terms += [t for t in (ctx.plan.get(code) or {}).get("q", [])[:2] if len(t) >= 2]
-    return {"query": build_query(ctx, code), "terms": terms}
+    return {"query": build_query(ctx, code), "terms": terms, "host": "api.gdeltproject.org"}
 
 
 def build_query(ctx, code) -> str:
@@ -109,8 +109,17 @@ def _run(ctx, task, code) -> int:
         task.meta["note"] = "GDELT хранит только последние 3 месяца — начало периода обрезано"
     q = build_query(ctx, code)
     try:
-        arts = _fetch(ctx, q, start, end)
+        try:
+            arts = _fetch(ctx, q, start, end)
+        except FetchError as e:
+            if e.status != 429 or ctx.cancel.is_set():
+                raise
+            ctx.cancel.wait(6.5)  # GDELT просит не чаще раза в 5 с — одна повторная попытка
+            arts = _fetch(ctx, q, start, end)
     except FetchError as e:
+        if e.status == 429:
+            ctx.http.block_host("api.gdeltproject.org", 90)
+            raise
         if code and code != "en" and "sourcelang" in q and not q.isascii():
             # запасной вариант — только английские термины
             en = ctx.plan.get("en") or {}

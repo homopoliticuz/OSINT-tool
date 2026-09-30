@@ -20,6 +20,7 @@ import random
 import re
 import socket
 import ssl
+import tempfile
 import threading
 import time
 import urllib.error
@@ -42,7 +43,7 @@ DEFAULT_HEADERS = {
 
 # Особые правила для хостов: параллельность и минимальный интервал между запросами.
 HOST_RULES = {
-    "news.google.com": {"conc": 3, "gap": 0.35},
+    "news.google.com": {"conc": 2, "gap": 0.6},
     "api.gdeltproject.org": {"conc": 1, "gap": 5.3},
     "www.bing.com": {"conc": 2, "gap": 0.4},
     "www.wikidata.org": {"conc": 4, "gap": 0.05},
@@ -184,6 +185,25 @@ def _ssl_context() -> ssl.SSLContext:
     return ctx
 
 
+def _decode_cert(pem: str) -> dict:
+    """Разобрать PEM-сертификат средствами стандартной библиотеки (субъект, издатель, адреса AIA)."""
+    decode = getattr(getattr(ssl, "_ssl", None), "_test_decode_cert", None)
+    if not decode:
+        return {}
+    fd, path = tempfile.mkstemp(suffix=".pem")
+    try:
+        with os.fdopen(fd, "w") as f:
+            f.write(pem)
+        return decode(path) or {}
+    except (ssl.SSLError, OSError, ValueError):
+        return {}
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+
+
 # ---------------------------------------------------------------- фикстуры (тесты)
 
 class FixtureTransport:
@@ -258,6 +278,8 @@ class HttpClient:
         self._mem_lock = threading.Lock()
         self._cookies = http.cookiejar.CookieJar()
         self._ssl = _ssl_context()
+        self._host_ssl: dict[str, ssl.SSLContext] = {}
+        self._aia_tried: set[str] = set()
         self.stats = {"requests": 0, "cache_hits": 0, "errors": 0}
 
     # -- служебное
@@ -269,6 +291,11 @@ class HttpClient:
                 g = _HostGate(rule.get("conc", DEFAULT_CONC), rule.get("gap", 0.0))
                 self._gates[host] = g
             return g
+
+    def block_host(self, host: str, seconds: float):
+        """Приостановить обращения к хосту (например, после страницы «я не робот»)."""
+        g = self._gate(host)
+        g.blocked_until = max(g.blocked_until, time.time() + seconds)
 
     def host_blocked(self, host: str) -> float:
         """Сколько секунд хост ещё «на паузе» после серии отказов (0 — доступен)."""
@@ -402,7 +429,19 @@ class HttpClient:
                     time.sleep(wait)
                 t0 = time.time()
                 try:
-                    r = self._do(url, method, data, hdrs, timeout, max_bytes, allow)
+                    try:
+                        r = self._do(url, method, data, hdrs, timeout, max_bytes, allow, self._host_ssl.get(host))
+                    except FetchError as e:
+                        # неполная цепочка сертификатов у сайта: дозагружаем промежуточный сертификат (AIA),
+                        # как это делают браузеры; проверка до корневого сертификата системы сохраняется
+                        if not getattr(e, "ssl_issuer", False) or host in self._aia_tried:
+                            raise
+                        self._aia_tried.add(host)
+                        ctx = self._aia_context(host, p.port or 443, allow)
+                        if ctx is None:
+                            raise
+                        r = self._do(url, method, data, hdrs, timeout, max_bytes, allow, ctx)
+                        self._host_ssl[host] = ctx
                     self.stats["requests"] += 1
                     gate.fail_streak = 0
                     if ttl > 0 and r.status == 200:
@@ -431,11 +470,57 @@ class HttpClient:
         self.stats["errors"] += 1
         raise last_err or FetchError("неизвестная ошибка", url=url)
 
-    def _do(self, url, method, data, hdrs, timeout, max_bytes, allow_private) -> Response:
+    def _aia_context(self, host: str, port: int, allow_private: bool):
+        """Контекст TLS с промежуточным сертификатом, загруженным по адресу AIA из сертификата сайта."""
+        try:
+            leaf = ssl.get_server_certificate((host, port), timeout=10)
+        except TypeError:  # Python < 3.10: без таймаута не рискуем
+            return None
+        except (OSError, ssl.SSLError, ValueError):
+            return None
+        info = _decode_cert(leaf)
+        for u in [x for x in (info.get("caIssuers") or ()) if str(x).startswith(("http://", "https://"))][:2]:
+            try:
+                if not allow_private:
+                    check_public_host(urllib.parse.urlsplit(u).hostname or "")
+                body = self._do(u, "GET", None, dict(DEFAULT_HEADERS), 10, 200_000, allow_private).body
+            except FetchError:
+                continue
+            if body.lstrip().startswith(b"-----BEGIN CERTIFICATE"):
+                pem = body.decode("ascii", "ignore")
+            elif body[:1] == b"\x30":
+                try:
+                    pem = ssl.DER_cert_to_PEM_cert(body)
+                except (ValueError, TypeError):
+                    continue
+            else:
+                continue  # PKCS#7 и прочие форматы не поддерживаем
+            ci = _decode_cert(pem)
+            if not ci or ci.get("subject") == ci.get("issuer"):
+                continue  # самоподписанный сертификат не может стать доверенным корнем
+            ctx = _ssl_context()
+            try:
+                ctx.load_verify_locations(cadata=pem)
+            except (ssl.SSLError, ValueError):
+                continue
+            if hasattr(ssl, "VERIFY_X509_PARTIAL_CHAIN"):
+                # промежуточный сертификат — только звено цепочки, доверие по-прежнему от корня системы
+                ctx.verify_flags &= ~ssl.VERIFY_X509_PARTIAL_CHAIN
+            return ctx
+        return None
+
+    def _do(self, url, method, data, hdrs, timeout, max_bytes, allow_private, ssl_ctx=None) -> Response:
         req = urllib.request.Request(url, data=data, headers=hdrs, method=method)
-        opener = self._opener() if allow_private == self.allow_private else urllib.request.build_opener(
-            urllib.request.HTTPCookieProcessor(self._cookies),
-            urllib.request.HTTPSHandler(context=self._ssl), _Redirect(allow_private))
+        if ssl_ctx is not None:
+            opener = urllib.request.build_opener(
+                urllib.request.HTTPCookieProcessor(self._cookies),
+                urllib.request.HTTPSHandler(context=ssl_ctx), _Redirect(allow_private))
+        elif allow_private == self.allow_private:
+            opener = self._opener()
+        else:
+            opener = urllib.request.build_opener(
+                urllib.request.HTTPCookieProcessor(self._cookies),
+                urllib.request.HTTPSHandler(context=self._ssl), _Redirect(allow_private))
         try:
             resp = opener.open(req, timeout=timeout)
         except urllib.error.HTTPError as e:
@@ -450,8 +535,11 @@ class HttpClient:
         except urllib.error.URLError as e:
             reason = e.reason
             if isinstance(reason, ssl.SSLCertVerificationError) or "CERTIFICATE_VERIFY_FAILED" in str(reason):
-                raise FetchError("ошибка проверки SSL-сертификата (см. README: «Сертификаты на macOS»)",
-                                 url=url) from None
+                vm = str(getattr(reason, "verify_message", "") or reason)
+                err = FetchError("ошибка проверки SSL-сертификата: %s (см. README: «Сертификаты на macOS»)"
+                                 % vm[:80], url=url)
+                err.ssl_issuer = "issuer" in vm
+                raise err from None
             if isinstance(reason, FetchError):
                 raise reason from None
             raise FetchError("нет соединения: %s" % _short_reason(reason), url=url) from None

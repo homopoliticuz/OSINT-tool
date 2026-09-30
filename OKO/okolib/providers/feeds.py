@@ -10,6 +10,7 @@ from functools import partial
 from urllib.parse import urlencode
 
 from ..feedparse import parse_feed
+from ..health import classify
 from ..net import FetchError
 from ..util import detect_lang, now_ts, parse_date, strip_html, utc_iso
 from . import Task, make_item
@@ -29,7 +30,7 @@ def rss_tasks(ctx) -> list:
                 pending += 1
             continue
         out.append(Task("rss", "rss:" + s["id"], s["name"], partial(_run_rss, source=s, feeds=feeds),
-                        group=s.get("type", ""), meta={"query": "", "terms": []}))
+                        group=s.get("type", ""), meta={"query": "", "terms": [], "source": s["id"]}))
     if pending:
         ctx.note("Ленты ещё не обнаружены для %d источников — идёт фоновая проверка реестра" % pending)
     return out
@@ -46,11 +47,13 @@ def _run_rss(ctx, task, source, feeds) -> int:
                              cancel=ctx.cancel)
             parsed = parse_feed(r.body, r.url, r.charset())
         except FetchError as e:
-            errors.append(e.short())
-            ctx.registry.mark_feed(source["id"], f, False)
+            errors.append(e)
+            # адрес ленты исчез или сайт закрыл её — ищем новую; сетевые сбои ленту не «портят»
+            if classify(e) in ("gone", "denied", "format"):
+                ctx.registry.mark_feed(source["id"], f, False)
             continue
         if not parsed["items"]:
-            errors.append("лента пуста или повреждена")
+            errors.append(FetchError("лента пуста или повреждена (%s)" % parsed.get("kind", "?"), url=f))
             ctx.registry.mark_feed(source["id"], f, False)
             continue
         ok += 1
@@ -74,7 +77,11 @@ def _run_rss(ctx, task, source, feeds) -> int:
             if ctx.add(item):
                 added += 1
     if not ok and errors:
-        raise FetchError("; ".join(errors[:2]))
+        if not ctx.registry.feeds_for(source):
+            ctx.registry.request_rediscovery(source["id"])
+            task.meta["note"] = "ищу новую ленту на сайте источника"
+        first = errors[0]
+        raise FetchError("; ".join(e.short() for e in errors[:2]), first.status, first.url)
     return added
 
 
@@ -98,7 +105,7 @@ def wp_tasks(ctx) -> list:
                 term += " " + p["ctx"][0]
             out.append(Task("wp", "wp:%s:%s" % (s["id"], code), "%s (%s)" % (s["name"], code.upper()),
                             partial(_run_wp, source=s, api=api, term=term, code=code), group=code,
-                            meta={"query": "поиск по сайту: " + term, "terms": [p["q"][0]]}))
+                            meta={"query": "поиск по сайту: " + term, "terms": [p["q"][0]], "source": s["id"]}))
     return out
 
 
@@ -122,7 +129,9 @@ def _run_wp(ctx, task, source, api, term, code) -> int:
                          headers={"Accept": "application/json"})
         data = r.json()
     except FetchError as e:
-        if e.status in (400, 401, 403, 404, 405, 410, 501):
+        if e.status in (401, 403, 404, 410):
+            ctx.registry.mark_wp(source["id"], False, hard=True)
+        elif e.status in (400, 405, 501):
             ctx.registry.mark_wp(source["id"], False)
         raise
     except ValueError:
@@ -150,7 +159,7 @@ def _run_wp(ctx, task, source, api, term, code) -> int:
                          lang=detect_lang(title, code), prov="wp", via="Поиск по сайту · " + source["name"],
                          src_name=source["name"], src_url="https://" + source["domains"][0], snippet=excerpt,
                          authors=authors, source_id=source["id"],
-                         hit=hit[0] if hit else "text", term=hit[1] if hit else term)
+                         hit=hit[0] if hit else "engine", term=hit[1] if hit else "")
         if ctx.add(item):
             added += 1
     return added

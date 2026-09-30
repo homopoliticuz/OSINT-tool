@@ -349,3 +349,6 @@ mark.hl { background: rgba(201, 162, 39, .28); color: inherit; border-radius: 2p
   .item { border-color: #ccc; break-inside: avoid; }
   .ititle { color: #000; }
 }
+.plog-tool { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 2px 0 8px; font-size: 12px; }
+details.health summary { cursor: pointer; }
+details.health[open] summary { margin-bottom: 8px; }

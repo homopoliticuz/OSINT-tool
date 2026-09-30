@@ -16,6 +16,7 @@ sys.path.insert(0, ROOT)
 FIX = os.path.join(ROOT, "tests", "fixtures", "upstream")
 
 from okolib import feedparse, htmlmeta  # noqa: E402
+from okolib.health import Health, classify  # noqa: E402
 from okolib.lexicon import Languages, Lexicon, build_plan, plan_origins  # noqa: E402
 from okolib.search import sanitize_origins  # noqa: E402
 from okolib.net import FetchError, FixtureTransport, HttpClient, check_public_host  # noqa: E402
@@ -283,6 +284,128 @@ def _free_port():
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
         return s.getsockname()[1]
+
+
+class TestHealth(unittest.TestCase):
+    def test_classify(self):
+        self.assertEqual(classify(FetchError("HTTP 429", 429)), "limit")
+        self.assertEqual(classify(FetchError("источник временно ограничил запросы", 429)), "limit")
+        self.assertEqual(classify(FetchError("HTTP 403", 403)), "denied")
+        self.assertEqual(classify(FetchError("HTTP 404", 404)), "gone")
+        self.assertEqual(classify(FetchError("HTTP 502", 502)), "server")
+        self.assertEqual(classify(FetchError("превышено время ожидания")), "network")
+        self.assertEqual(classify(FetchError("ошибка проверки SSL-сертификата: x")), "ssl")
+        self.assertEqual(classify(FetchError("WordPress API вернул не JSON")), "format")
+
+    def test_backoff_and_recovery(self):
+        path = os.path.join(tempfile.mkdtemp(), "health.json")
+        h = Health(path)
+        for _ in range(2):
+            h.fail("rss:x", "network", "timeout", label="X")
+        self.assertIsNone(h.skip_reason("rss:x"))
+        h.fail("rss:x", "network", "timeout", label="X")
+        self.assertIn("временно отключён", h.skip_reason("rss:x"))
+        h.flush()
+        self.assertIn("временно отключён", Health(path).skip_reason("rss:x"))    # сохраняется между запусками
+        # сервис поисковой системы: сетевые сбои не отключают отдельный запрос
+        for _ in range(5):
+            h.fail("gn:US:en", "network", "timeout", engine=True)
+        self.assertIsNone(h.skip_reason("gn:US:en"))
+        for _ in range(3):
+            h.fail("gn:IR:fa", "gone", "HTTP 400", engine=True)
+        self.assertTrue(h.skip_reason("gn:IR:fa"))
+        h.ok("rss:x")
+        self.assertIsNone(h.skip_reason("rss:x"))
+        self.assertEqual({x["key"] for x in h.snapshot()}, {"gn:US:en", "gn:IR:fa"})
+        h.reset()
+        self.assertEqual(h.snapshot(), [])
+
+
+@unittest.skipUnless(shutil.which("openssl"), "нужна утилита openssl")
+class TestTlsChain(unittest.TestCase):
+    """Сайт отдаёт сертификат без промежуточного: ОКО дозагружает его по AIA, но не доверяет подделкам."""
+
+    @classmethod
+    def setUpClass(cls):
+        import http.server
+        import ssl
+        import threading
+        cls.dir = d = tempfile.mkdtemp()
+        cls.http_port, cls.tls_port = _free_port(), _free_port()
+
+        def sh(*args, ext=None):
+            if ext:
+                with open(os.path.join(d, "ext.cnf"), "w") as f:
+                    f.write(ext)
+                args += ("-extfile", os.path.join(d, "ext.cnf"))
+            subprocess.run(("openssl",) + args, cwd=d, check=True, capture_output=True)
+        ca = "basicConstraints=critical,CA:TRUE\nkeyUsage=critical,keyCertSign,cRLSign\nsubjectKeyIdentifier=hash\n" \
+             "authorityKeyIdentifier=keyid,issuer\n"
+        sh("req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", "root.key", "-out", "root.pem", "-days", "2",
+           "-subj", "/CN=OKO Test Root", "-addext", "basicConstraints=critical,CA:TRUE",
+           "-addext", "keyUsage=critical,keyCertSign,cRLSign")
+        sh("req", "-newkey", "rsa:2048", "-nodes", "-keyout", "int.key", "-out", "int.csr", "-subj", "/CN=OKO Test Int")
+        sh("x509", "-req", "-in", "int.csr", "-CA", "root.pem", "-CAkey", "root.key", "-CAcreateserial", "-out",
+           "int.pem", "-days", "2", ext=ca)
+        sh("x509", "-in", "int.pem", "-outform", "DER", "-out", "int.der")
+        # поддельный «промежуточный» — самоподписанный
+        sh("req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", "fake.key", "-out", "fake.pem", "-days", "2",
+           "-subj", "/CN=OKO Test Int", "-addext", "basicConstraints=critical,CA:TRUE")
+        sh("x509", "-in", "fake.pem", "-outform", "DER", "-out", "fake.der")
+        # leaf — честный сайт с неполной цепочкой; leaf2 — подмена: сертификат выпущен самоподписанным
+        # «удостоверяющим центром» злоумышленника, на который указывает AIA
+        for name, issuer, ca_name in (("leaf", "int.der", "int"), ("leaf2", "fake.der", "fake")):
+            sh("req", "-newkey", "rsa:2048", "-nodes", "-keyout", name + ".key", "-out", name + ".csr", "-subj",
+               "/CN=localhost")
+            sh("x509", "-req", "-in", name + ".csr", "-CA", ca_name + ".pem", "-CAkey", ca_name + ".key",
+               "-CAcreateserial", "-out", name + ".pem", "-days", "2",
+               ext="subjectAltName=DNS:localhost,IP:127.0.0.1\nbasicConstraints=CA:FALSE\n"
+                   "authorityKeyIdentifier=keyid,issuer\n"
+                   "authorityInfoAccess=caIssuers;URI:http://127.0.0.1:%d/%s\n" % (cls.http_port, issuer))
+
+        class Files(http.server.SimpleHTTPRequestHandler):
+            def __init__(self, *a, **kw):
+                super().__init__(*a, directory=d, **kw)
+
+            def log_message(self, *a):
+                pass
+        cls.srv_http = http.server.ThreadingHTTPServer(("127.0.0.1", cls.http_port), Files)
+        threading.Thread(target=cls.srv_http.serve_forever, daemon=True).start()
+        cls.tls = []
+        for name in ("leaf", "leaf2"):
+            port = cls.tls_port if name == "leaf" else _free_port()
+            srv = http.server.ThreadingHTTPServer(("127.0.0.1", port), Files)
+            sctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            sctx.load_cert_chain(os.path.join(d, name + ".pem"), os.path.join(d, name + ".key"))  # без цепочки
+            srv.socket = sctx.wrap_socket(srv.socket, server_side=True)
+            threading.Thread(target=srv.serve_forever, daemon=True).start()
+            cls.tls.append((srv, port))
+        with open(os.path.join(d, "ok.txt"), "w") as f:
+            f.write("OK")
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.srv_http.shutdown()
+        for srv, _ in cls.tls:
+            srv.shutdown()
+        shutil.rmtree(cls.dir, ignore_errors=True)
+
+    def client(self):
+        import ssl
+        from okolib import net
+        orig = net._ssl_context
+        net._ssl_context = lambda: ssl.create_default_context(cafile=os.path.join(self.dir, "root.pem"))
+        self.addCleanup(setattr, net, "_ssl_context", orig)
+        return HttpClient(None, allow_private=True)
+
+    def test_aia_completion(self):
+        r = self.client().get("https://localhost:%d/ok.txt" % self.tls[0][1], retries=0, timeout=10)
+        self.assertEqual(r.body, b"OK")
+
+    def test_self_signed_issuer_rejected(self):
+        with self.assertRaises(FetchError) as cm:
+            self.client().get("https://localhost:%d/ok.txt" % self.tls[1][1], retries=0, timeout=10)
+        self.assertIn("SSL", str(cm.exception))
 
 
 class TestServerIntegration(unittest.TestCase):

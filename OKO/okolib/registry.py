@@ -137,16 +137,37 @@ class Registry:
                     d["feeds_ok"].remove(feed)
             self._disc_dirty = True
 
-    def mark_wp(self, sid: str, ok: bool):
+    def mark_wp(self, sid: str, ok: bool, hard: bool = False):
         with self.lock:
             d = self.discovery.setdefault(sid, {})
             if not ok:
                 d["wp_bad"] = d.get("wp_bad", 0) + 1
-                if d["wp_bad"] >= 2:
+                if d["wp_bad"] >= 2 or hard:
                     d["wp_api"] = ""
             else:
                 d["wp_bad"] = 0
             self._disc_dirty = True
+
+    def request_rediscovery(self, sid: str):
+        """Поискать новую ленту источника в фоне (не чаще раза в сутки на источник)."""
+        s = self.by_id.get(sid)
+        if not s or s.get("off"):
+            return False
+        with self.lock:
+            d = self.discovery.setdefault(sid, {})
+            if now_ts() - d.get("redisc", 0) < 86400:
+                return False
+            d["redisc"] = now_ts()
+            self._disc_dirty = True
+
+        def job():
+            try:
+                self.discover_one(s)
+                self.flush()
+            except Exception:  # noqa: BLE001 — фоновая попытка, ошибка не критична
+                pass
+        threading.Thread(target=job, name="oko-rediscover-" + sid, daemon=True).start()
+        return True
 
     def flush(self):
         with self.lock:
@@ -201,6 +222,8 @@ class Registry:
                 prev = dict(prev)
                 prev.update({"ts": result["ts"], "status": "unreachable", "error": result["error"]})
                 result = prev
+            if prev.get("redisc") and "redisc" not in result:
+                result["redisc"] = prev["redisc"]
             self.discovery[s["id"]] = result
             self._disc_dirty = True
         return result

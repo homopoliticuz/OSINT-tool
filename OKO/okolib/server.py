@@ -21,6 +21,7 @@ from http.server import BaseHTTPRequestHandler
 from urllib.parse import parse_qs, quote, unquote, urlsplit
 
 from . import VERSION, htmlmeta, pdfprint, webdata
+from .health import Health
 from .lexicon import Languages, Lexicon, build_plan, plan_origins
 from .net import FetchError, HttpClient
 from .providers import gnews
@@ -54,6 +55,7 @@ class App:
         self.registry = Registry(os.path.join(root, "data", "sources.json"),
                                  os.path.join(self.state_dir, "sources_user.json"),
                                  os.path.join(self.data, "cache", "discovery.json"), self.http)
+        self.health = Health(os.path.join(self.state_dir, "health.json"))
         self.jobs: dict[str, SearchJob] = {}
         self.jobs_lock = threading.Lock()
         self.fixtures = bool(fixtures)
@@ -245,6 +247,12 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"ok": True})
         if route == "sources/progress":
             return self._json(app.registry.progress)
+        if route == "sources/health":
+            if method == "GET":
+                return self._json({"channels": app.health.snapshot()})
+            data = self._body()
+            app.health.reset(data.get("key") or None)
+            return self._json({"ok": True})
         if route == "expand" and method == "POST":
             return self._json(self._expand(self._body()))
         if route == "glossary":

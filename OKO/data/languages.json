@@ -1,5 +1,5 @@
 {
-  "_comment": "Языки поиска ОКО. core=true — обязательный набор (12 языков). gnews — издания Google News (hl, gl, ceid); gdelt — имя языка для оператора sourcelang; bing — рынок Bing News [setlang, cc]; exp — экспериментальное издание.",
+  "_comment": "Языки поиска ОКО. core=true — обязательный набор (12 языков). gnews — издания Google News (hl, gl, ceid); gdelt — имя языка для оператора sourcelang; bing — рынок Bing News [setlang, cc]; у персидского и урду нет изданий Google News — они покрываются GDELT, лентами и поиском по сайтам источников.",
   "languages": [
     {"code": "ru", "name": "Русский", "native": "Русский", "core": true, "script": "Cyrl",
      "gnews": [["ru", "RU", "RU:ru"]], "gdelt": "russian", "bing": ["ru", "RU"]},
@@ -20,11 +20,11 @@
     {"code": "zh", "name": "Китайский", "native": "中文", "core": true, "script": "Hans",
      "gnews": [["zh-CN", "CN", "CN:zh-Hans"], ["zh-TW", "TW", "TW:zh-Hant", "Hant"]], "gdelt": "chinese", "bing": ["zh-hans", "CN"]},
     {"code": "fa", "name": "Персидский", "native": "فارسی", "core": true, "script": "Arab", "rtl": true,
-     "gnews": [["fa", "IR", "IR:fa"]], "gnews_exp": true, "gdelt": "persian", "bing": null},
+     "gnews": [], "gdelt": "persian", "bing": null},
     {"code": "ar", "name": "Арабский", "native": "العربية", "core": true, "script": "Arab", "rtl": true,
      "gnews": [["ar", "SA", "SA:ar"], ["ar", "EG", "EG:ar"], ["ar", "AE", "AE:ar"]], "gdelt": "arabic", "bing": ["ar", "SA"]},
     {"code": "ur", "name": "Урду", "native": "اردو", "core": true, "script": "Arab", "rtl": true,
-     "gnews": [["ur", "PK", "PK:ur"]], "gnews_exp": true, "gdelt": "urdu", "bing": null},
+     "gnews": [], "gdelt": "urdu", "bing": null},
     {"code": "tr", "name": "Турецкий", "native": "Türkçe", "core": false, "default": true, "script": "Latn",
      "gnews": [["tr", "TR", "TR:tr"]], "gdelt": "turkish", "bing": ["tr", "TR"]},
     {"code": "uz", "name": "Узбекский", "native": "Oʻzbek", "core": false, "default": true, "script": "Latn",
